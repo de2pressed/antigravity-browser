@@ -1,6 +1,6 @@
 {
   "name": "browser_paste",
-  "description": "Paste text or TSV (Tab-Separated Values) directly into the active element/selection in the page via clipboard and hardware Ctrl+V.",
+  "description": "Paste text, TSV, or styled HTML directly into the active element/selection in the page via dual DataTransfer clipboard injection.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -11,6 +11,10 @@
       "text": {
         "type": "string",
         "description": "The text or TSV table content to paste."
+      },
+      "html": {
+        "type": "string",
+        "description": "Optional rich HTML table/markup to paste into formatted editors like Google Sheets with custom cell styles, colors, and borders."
       }
     },
     "required": ["tabId", "text"]

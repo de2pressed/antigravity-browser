@@ -116,19 +116,23 @@ Always verify completion:
 
 | MCP Tool | CLI Equivalent | Primary Use Case |
 |---|---|---|
-| `browser_list_tabs` | `agy-browser tabs` | Discover open tabs & profiles |
+| `browser_list_tabs` | `agy-browser tabs [--profile <email>]` | Discover open tabs & profiles |
+| `browser_claim_tab` | `agy-browser claim <tabId>` | Explicitly claim existing tab as agent-owned |
 | `browser_new_tab` | `agy-browser new [--profile <hint>] <url>` | Create background tab |
 | `browser_activate_tab`| `agy-browser activate <tabId> [--bring-to-front]` | Focus or claim tab |
 | `browser_navigate` | `agy-browser nav <tabId> <url>` | Go to URL in tab |
 | `browser_snapshot` | `agy-browser snap <tabId>` | Fetch accessibility DOM tree |
 | `browser_click` | `agy-browser click <tabId> <uid>` | Single click with glowing cursor |
-| `browser_find_and_click`| `agy-browser fc <tabId> <selector>` | One-shot fuzzy text clicker |
+| `browser_find_and_click`| `agy-browser fc <tabId> <selector>` | One-shot selector clicker |
 | `browser_type` | `agy-browser type <tabId> <text>` | Emulate human typing |
-| `browser_paste` | `agy-browser paste <tabId> <text>` | Bulk text injection |
+| `browser_paste` | `agy-browser paste <tabId> <text> [--html <html>]` | Bulk TSV / HTML injection |
+| `browser_scroll` | `agy-browser scroll <tabId> [--distance <px>]` | Scroll window / viewport |
+| `browser_screenshot` | `agy-browser screenshot <tabId> [-o <path>]` | Capture and save image to disk |
+| `browser_evaluate` | `agy-browser eval <tabId> "<jsCode>"` | Evaluate JavaScript in page |
 | `browser_run_actions` | `agy-browser batch <tabId> '<actions>'` | **Compound action batch runner** |
 | `browser_close_tab` | `agy-browser close <tabId>` | Close single tab |
 | `browser_close_agent_tabs`| `agy-browser cleanup` | Cleanly close all agent scratch tabs |
-| `browser_reload_extension`| `agy-browser reload` | Hot-reload extension v1.4.0 |
+| `browser_reload_extension`| `agy-browser reload` | Hot-reload extension v1.5.0 |
 
 ---
 

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Antigravity Browser Bridge",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "High-precision enterprise-grade browser bridge for Antigravity AI pair programmer.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwvUEgEafLdcy6hHUxwX7oYBqj4byBRuCFiT4aB5/ruRBEzKnHytSsH8gM1Mtj46xAATJBMefdf62qiHplyeHzwWeODSjKnpPnRSLY8b9WX3drOUif4CAYRNQWk5kSaMUhF81+772ccIBJnSZkINI4ScEjuyxGR2Y3ohaudqil04GOuXe/YgHg1iVVePgqr6g9Ci4oMlV7dtuLnrXDFfO15t1Wz/irZiSW0Yt/p/xrdVqiERLx5wFm1m0yan5Woaj9nvCKdy+xabos3vGytCQl5EzgBHkOAdGHsmTh4OKZ9YnEdueE0+C1jmUzWfYq6ME7kqKBMFkYCGZIjT6j3rClwIDAQAB",
   "permissions": [

@@ -11,6 +11,32 @@ const tabSnapshots = new Map(); // tabId -> { elementMap, time }
 const cursorStates = new Map(); // tabId -> { cursor, isVisible, sessionId, turnId }
 const cursorTimers = new Map(); // tabId -> setTimeout timer
 
+// Persistent Tab Ownership across Service Worker Lifecycles
+async function loadAgentOwnedTabs() {
+  try {
+    if (chrome.storage && chrome.storage.session) {
+      const data = await chrome.storage.session.get("agentOwnedTabs");
+      if (Array.isArray(data.agentOwnedTabs)) {
+        data.agentOwnedTabs.forEach(id => agentOwnedTabs.add(id));
+      }
+    }
+  } catch (e) {
+    console.warn("[Antigravity Bridge] Could not load agentOwnedTabs from session storage:", e);
+  }
+}
+
+async function saveAgentOwnedTabs() {
+  try {
+    if (chrome.storage && chrome.storage.session) {
+      await chrome.storage.session.set({ agentOwnedTabs: Array.from(agentOwnedTabs) });
+    }
+  } catch (e) {
+    console.warn("[Antigravity Bridge] Could not save agentOwnedTabs to session storage:", e);
+  }
+}
+
+loadAgentOwnedTabs();
+
 // 1. Native Messaging Lifecycle
 function connectNative() {
   try {
@@ -123,6 +149,12 @@ async function detectProfile() {
           }
         }
       }
+    } catch (e) {}
+  }
+
+  if (email !== "unknown") {
+    try {
+      await chrome.storage.local.set({ profileEmail: email });
     } catch (e) {}
   }
 
@@ -240,6 +272,9 @@ async function handleRequest(msg) {
       case "close_agent_tabs":
         result = await closeAgentTabs();
         break;
+      case "claim_tab":
+        result = await claimTab(params);
+        break;
       case "list_tabs":
         result = await listTabs();
         break;
@@ -319,15 +354,33 @@ async function handleRequest(msg) {
 }
 
 // Safety: Prevent hijacking existing user tabs without explicit instruction
-function checkTabSafety(params = {}) {
+async function checkTabSafety(params = {}) {
   if (!params.tabId) return;
   const tabId = parseInt(params.tabId, 10);
   if (agentOwnedTabs.has(tabId)) return;
   if (params.allowExistingTab === true || params.force === true) {
     agentOwnedTabs.add(tabId); // Explicitly claimed
+    await saveAgentOwnedTabs();
     return;
   }
-  throw new Error(`Safety Protection: Tab ${tabId} is an existing user tab. To interact with it without hijacking the user's workspace, pass { allowExistingTab: true }, or create a dedicated background tab via new_tab.`);
+  throw new Error(`Safety Protection: Tab ${tabId} is an existing user tab. To interact with it without hijacking the user's workspace, run 'agy-browser claim ${tabId}', pass { allowExistingTab: true }, or create a dedicated background tab via new_tab.`);
+}
+
+async function claimTab(params = {}) {
+  const tabId = parseInt(params.tabId, 10);
+  if (isNaN(tabId)) throw new Error("Invalid tabId provided to claimTab");
+  const tab = await chrome.tabs.get(tabId);
+  agentOwnedTabs.add(tab.id);
+  await saveAgentOwnedTabs();
+  await ensureDebugger(tab.id);
+  return {
+    success: true,
+    tabId: tab.id,
+    url: tab.url,
+    title: tab.title,
+    profileEmail: profileIdentity.email,
+    claimed: true
+  };
 }
 
 // 5. Tab Management
@@ -356,6 +409,7 @@ async function newTab(params = {}) {
     active: shouldBeActive
   });
   agentOwnedTabs.add(tab.id);
+  await saveAgentOwnedTabs();
   if (params.waitForLoad !== false) {
     await waitForTabComplete(tab.id, params.timeout || 25000);
   }
@@ -382,6 +436,7 @@ async function activateTab(params) {
   }
   if (params.claimAsAgentOwned === true) {
     agentOwnedTabs.add(tabId);
+    await saveAgentOwnedTabs();
   }
   return { success: true, tabId, title: tab.title, url: tab.url, active: tab.active };
 }
@@ -393,6 +448,7 @@ async function closeTab(params) {
   tabSnapshots.delete(tabId);
   cursorStates.delete(tabId);
   agentOwnedTabs.delete(tabId);
+  await saveAgentOwnedTabs();
   return { success: true, tabId };
 }
 
@@ -408,6 +464,7 @@ async function closeAgentTabs() {
       closed.push(tabId);
     } catch (e) {}
   }
+  await saveAgentOwnedTabs();
   return { success: true, closedTabs: closed };
 }
 
@@ -741,38 +798,66 @@ async function pressKey(params) {
 
   const key = params.key || "Enter";
   const keyMap = {
-    "Enter": { vk: 13, text: "\r" },
-    "Tab": { vk: 9, text: "" },
-    "Escape": { vk: 27, text: "" },
-    "Backspace": { vk: 8, text: "" },
-    "Delete": { vk: 46, text: "" },
-    "ArrowDown": { vk: 40, text: "" },
-    "ArrowUp": { vk: 38, text: "" },
-    "ArrowLeft": { vk: 37, text: "" },
-    "ArrowRight": { vk: 39, text: "" },
-    "PageDown": { vk: 34, text: "" },
-    "PageUp": { vk: 33, text: "" },
-    "Home": { vk: 36, text: "" },
-    "End": { vk: 35, text: "" },
-    "Space": { vk: 32, text: " " }
+    "Enter": { vk: 13, text: "\r", code: "Enter" },
+    "Tab": { vk: 9, text: "", code: "Tab" },
+    "Escape": { vk: 27, text: "", code: "Escape" },
+    "Backspace": { vk: 8, text: "", code: "Backspace" },
+    "Delete": { vk: 46, text: "", code: "Delete" },
+    "ArrowDown": { vk: 40, text: "", code: "ArrowDown" },
+    "ArrowUp": { vk: 38, text: "", code: "ArrowUp" },
+    "ArrowLeft": { vk: 37, text: "", code: "ArrowLeft" },
+    "ArrowRight": { vk: 39, text: "", code: "ArrowRight" },
+    "PageDown": { vk: 34, text: "", code: "PageDown" },
+    "PageUp": { vk: 33, text: "", code: "PageUp" },
+    "Home": { vk: 36, text: "", code: "Home" },
+    "End": { vk: 35, text: "", code: "End" },
+    "Space": { vk: 32, text: " ", code: "Space" }
   };
 
+  let code = (keyMap[key] && keyMap[key].code) || "";
+  if (!code) {
+    if (key.length === 1 && /[a-zA-Z]/.test(key)) {
+      code = `Key${key.toUpperCase()}`;
+    } else if (key.length === 1 && /[0-9]/.test(key)) {
+      code = `Digit${key}`;
+    } else {
+      code = key;
+    }
+  }
+
   const vkCode = (keyMap[key] && keyMap[key].vk) || (key.length === 1 ? key.toUpperCase().charCodeAt(0) : 0);
-  const info = keyMap[key] || { vk: vkCode, text: key };
+  const info = keyMap[key] || { vk: vkCode, text: key, code };
   let modifiers = 0;
   if (params.ctrl) modifiers |= 2;
   if (params.alt) modifiers |= 1;
   if (params.shift) modifiers |= 8;
   if (params.meta) modifiers |= 4;
 
-  await cdpSend(tabId, "Input.dispatchKeyEvent", {
+  const commands = [];
+  if (params.ctrl || params.meta) {
+    const k = key.toLowerCase();
+    if (k === "v") commands.push("paste");
+    else if (k === "c") commands.push("copy");
+    else if (k === "x") commands.push("cut");
+    else if (k === "a") commands.push("selectAll");
+    else if (k === "z") commands.push("undo");
+    else if (k === "y") commands.push("redo");
+  }
+
+  const keyDownPayload = {
     type: "keyDown",
     windowsVirtualKeyCode: info.vk,
     text: info.text,
     unmodifiedText: info.text,
     key,
+    code,
     modifiers
-  });
+  };
+  if (commands.length > 0) {
+    keyDownPayload.commands = commands;
+  }
+
+  await cdpSend(tabId, "Input.dispatchKeyEvent", keyDownPayload);
 
   await cdpSend(tabId, "Input.dispatchKeyEvent", {
     type: "keyUp",
@@ -780,6 +865,7 @@ async function pressKey(params) {
     text: info.text,
     unmodifiedText: info.text,
     key,
+    code,
     modifiers
   });
 
@@ -907,23 +993,38 @@ async function pasteClipboard(params) {
   await ensureDebugger(tabId);
 
   const text = params.text || "";
+  const html = params.html || "";
 
-  // Insert into page clipboard context and trigger paste
+  // Insert into page clipboard context and trigger dual synthetic DataTransfer paste
   const pasteExpression = `
     (async () => {
+      let clipboardWriteSuccess = false;
       try {
         await navigator.clipboard.writeText(${JSON.stringify(text)});
-        return { ok: true, method: "clipboard_api" };
-      } catch (e) {
-        try {
-          const dt = new DataTransfer();
-          dt.setData('text/plain', ${JSON.stringify(text)});
-          const evt = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true });
-          (document.activeElement || document.body).dispatchEvent(evt);
-          return { ok: true, method: "synthetic_event" };
-        } catch (err) {
-          return { ok: false, error: err.message };
+        clipboardWriteSuccess = true;
+      } catch (e) {}
+
+      try {
+        const dt = new DataTransfer();
+        dt.setData('text/plain', ${JSON.stringify(text)});
+        if (${JSON.stringify(html)}) {
+          dt.setData('text/html', ${JSON.stringify(html)});
         }
+        const evt = new ClipboardEvent('paste', {
+          clipboardData: dt,
+          bubbles: true,
+          cancelable: true,
+          composed: true
+        });
+
+        // Target active element, waffle rich text editor (Google Sheets), or document
+        const target = document.getElementById('waffle-rich-text-editor') ||
+                       document.activeElement ||
+                       document.body;
+        target.dispatchEvent(evt);
+        return { ok: true, clipboardWriteSuccess, targetDispatched: true };
+      } catch (err) {
+        return { ok: false, error: err.message, clipboardWriteSuccess };
       }
     })()
   `;
@@ -934,10 +1035,10 @@ async function pasteClipboard(params) {
     awaitPromise: true
   });
 
-  // Also dispatch hardware Ctrl+V to ensure sheet canvas listeners catch it
+  // Also dispatch hardware Ctrl+V to ensure any native Blink or canvas listeners catch it
   await pressKey({ tabId, key: "v", ctrl: true });
 
-  return { success: true, tabId, pastedLength: text.length };
+  return { success: true, tabId, pastedLength: text.length, hasHtml: !!html };
 }
 
 async function runActions(params) {

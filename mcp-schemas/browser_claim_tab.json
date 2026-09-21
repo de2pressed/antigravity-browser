@@ -1,0 +1,14 @@
+{
+  "name": "browser_claim_tab",
+  "description": "Explicitly claim an existing user tab for the current agent session, bypassing tab safety protection without needing allowExistingTab flags on subsequent calls.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "tabId": {
+        "type": "number",
+        "description": "The tab ID to claim as agent-owned."
+      }
+    },
+    "required": ["tabId"]
+  }
+}

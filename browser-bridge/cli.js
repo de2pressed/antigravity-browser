@@ -6,6 +6,9 @@ const fs = require("fs");
 const SOCKET_PATH = "/tmp/antigravity-browser-bridge.sock";
 
 function callDaemon(method, params = {}, timeoutMs = 25000) {
+  if (process.argv.includes("--force") || process.argv.includes("--allow-existing") || process.argv.includes("--allow-existing-tab")) {
+    params.allowExistingTab = true;
+  }
   return new Promise((resolve, reject) => {
     if (!fs.existsSync(SOCKET_PATH)) {
       return reject(new Error("Bridge daemon is not running (socket not found)."));
@@ -71,18 +74,24 @@ async function main() {
   if (!cmd || cmd === "--help" || cmd === "-h") {
     console.log(`Antigravity Browser Bridge CLI
 Usage:
-  node cli.js status
-  node cli.js list-tabs
-  node cli.js new-tab [--profile <email|hint>] [--foreground] <url>
-  node cli.js activate <tabId> [--bring-to-front]
-  node cli.js snapshot <tabId>
-  node cli.js click <tabId> <uid>
-  node cli.js type <tabId> <text> [--uid <uid>] [--clear] [--enter]
-  node cli.js paste <tabId> <text>
-  node cli.js batch <tabId> '<actionsJson>'
-  node cli.js close <tabId>
-  node cli.js cleanup (close all agent-created tabs)
-  node cli.js reload-extension
+  agy-browser status
+  agy-browser tabs [--profile <email|hint>] [--search <query>]
+  agy-browser claim <tabId>
+  agy-browser new [--profile <email|hint>] [--foreground] <url>
+  agy-browser activate <tabId> [--bring-to-front]
+  agy-browser snapshot <tabId>
+  agy-browser click <tabId> <uid> [--x <x> --y <y>] [--dblclick] [--right]
+  agy-browser fc <tabId> <selector>
+  agy-browser type <tabId> <text> [--uid <uid>] [--clear] [--enter]
+  agy-browser press-key <tabId> <key> [--ctrl] [--alt] [--shift] [--meta]
+  agy-browser paste <tabId> <text> [--html <htmlString>]
+  agy-browser scroll <tabId> [--direction up|down] [--distance <pixels>]
+  agy-browser screenshot <tabId> [-o <filePath>]
+  agy-browser eval <tabId> <expression>
+  agy-browser batch <tabId> '<actionsJson>'
+  agy-browser close <tabId>
+  agy-browser cleanup (close all agent-created tabs)
+  agy-browser reload-extension
 `);
     process.exit(0);
   }
@@ -92,7 +101,30 @@ Usage:
       const res = await callDaemon("status");
       console.log(JSON.stringify(res, null, 2));
     } else if (cmd === "list-tabs" || cmd === "tabs") {
-      const res = await callDaemon("list_tabs");
+      let profileFilter = null;
+      let searchQuery = null;
+      for (let i = 1; i < args.length; i++) {
+        if (args[i] === "--profile" && args[i + 1]) {
+          profileFilter = args[i + 1].toLowerCase();
+          i++;
+        } else if (args[i] === "--search" && args[i + 1]) {
+          searchQuery = args[i + 1].toLowerCase();
+          i++;
+        }
+      }
+      let res = await callDaemon("list_tabs");
+      if (Array.isArray(res)) {
+        if (profileFilter) {
+          res = res.filter(t => (t.profileEmail || "").toLowerCase().includes(profileFilter));
+        }
+        if (searchQuery) {
+          res = res.filter(t => (t.title || "").toLowerCase().includes(searchQuery) || (t.url || "").toLowerCase().includes(searchQuery));
+        }
+      }
+      console.log(JSON.stringify(res, null, 2));
+    } else if (cmd === "claim") {
+      const tabId = parseInt(args[1], 10);
+      const res = await callDaemon("claim_tab", { tabId, allowExistingTab: true });
       console.log(JSON.stringify(res, null, 2));
     } else if (cmd === "new-tab" || cmd === "new") {
       let profile = null;
@@ -180,10 +212,41 @@ Usage:
       }
       const res = await callDaemon("press_key", { tabId, key, ctrl, alt, shift, meta });
       console.log(JSON.stringify(res, null, 2));
-    } else if (cmd === "screenshot") {
+    } else if (cmd === "screenshot" || cmd === "shot") {
       const tabId = parseInt(args[1], 10);
+      let outputPath = null;
+      for (let i = 2; i < args.length; i++) {
+        if ((args[i] === "-o" || args[i] === "--output") && args[i + 1]) {
+          outputPath = args[i + 1];
+          i++;
+        }
+      }
       const res = await callDaemon("screenshot", { tabId });
-      console.log(`Captured screenshot (${res.format}, ${res.dataBase64?.length || 0} bytes base64)`);
+      if (outputPath && res.dataBase64) {
+        fs.writeFileSync(outputPath, Buffer.from(res.dataBase64, "base64"));
+        console.log(`Saved screenshot to ${outputPath} (${res.format}, ${res.dataBase64.length} bytes base64)`);
+      } else {
+        console.log(`Captured screenshot (${res.format}, ${res.dataBase64?.length || 0} bytes base64)`);
+      }
+    } else if (cmd === "scroll") {
+      const tabId = parseInt(args[1], 10);
+      let deltaY = 400;
+      let deltaX = 0;
+      for (let i = 2; i < args.length; i++) {
+        if (args[i] === "--direction" && args[i + 1] === "up") {
+          deltaY = -400;
+          i++;
+        } else if (args[i] === "--distance" && args[i + 1]) {
+          deltaY = parseFloat(args[i + 1]) * (deltaY < 0 ? -1 : 1);
+          i++;
+        } else if (args[i] === "--up") {
+          deltaY = -Math.abs(deltaY);
+        } else if (args[i] === "--down") {
+          deltaY = Math.abs(deltaY);
+        }
+      }
+      const res = await callDaemon("scroll", { tabId, deltaY, deltaX });
+      console.log(JSON.stringify(res, null, 2));
     } else if (cmd === "evaluate" || cmd === "eval") {
       const tabId = parseInt(args[1], 10);
       const expression = args.slice(2).join(" ");
@@ -212,8 +275,19 @@ Usage:
       console.log(JSON.stringify(res, null, 2));
     } else if (cmd === "paste") {
       const tabId = parseInt(args[1], 10);
-      const text = args.slice(2).join(" ");
-      const res = await callDaemon("paste", { tabId, text });
+      let text = "";
+      let html = "";
+      for (let i = 2; i < args.length; i++) {
+        if (args[i] === "--html" && args[i + 1]) {
+          html = args[i + 1];
+          i++;
+        } else if (!text) {
+          text = args[i];
+        } else {
+          text += " " + args[i];
+        }
+      }
+      const res = await callDaemon("paste", { tabId, text, html });
       console.log(JSON.stringify(res, null, 2));
     } else if (cmd === "run-actions" || cmd === "batch") {
       const tabId = parseInt(args[1], 10);
