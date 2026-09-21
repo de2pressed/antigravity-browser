@@ -1,0 +1,1 @@
+{"name":"browser_snapshot","description":"Capture an accessibility tree snapshot with interactive elements, headings, text, and unique UIDs for precision clicking and typing.","parameters":{"properties":{"tabId":{"description":"The ID of the tab to inspect.","type":"number"}},"required":["tabId"],"type":"object"}}

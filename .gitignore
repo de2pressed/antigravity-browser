@@ -1,0 +1,24 @@
+# Logs & Runtime Sockets
+*.log
+*.sock
+/tmp/
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Test Screenshots & Artifacts
+*.png
+*.jpg
+*.jpeg
+scratch/

@@ -1,0 +1,54 @@
+{
+  "manifest_version": 3,
+  "name": "Antigravity Browser Bridge",
+  "version": "1.4.0",
+  "description": "High-precision enterprise-grade browser bridge for Antigravity AI pair programmer.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwvUEgEafLdcy6hHUxwX7oYBqj4byBRuCFiT4aB5/ruRBEzKnHytSsH8gM1Mtj46xAATJBMefdf62qiHplyeHzwWeODSjKnpPnRSLY8b9WX3drOUif4CAYRNQWk5kSaMUhF81+772ccIBJnSZkINI4ScEjuyxGR2Y3ohaudqil04GOuXe/YgHg1iVVePgqr6g9Ci4oMlV7dtuLnrXDFfO15t1Wz/irZiSW0Yt/p/xrdVqiERLx5wFm1m0yan5Woaj9nvCKdy+xabos3vGytCQl5EzgBHkOAdGHsmTh4OKZ9YnEdueE0+C1jmUzWfYq6ME7kqKBMFkYCGZIjT6j3rClwIDAQAB",
+  "permissions": [
+    "tabs",
+    "debugger",
+    "scripting",
+    "activeTab",
+    "nativeMessaging",
+    "storage",
+    "webNavigation",
+    "cookies",
+    "identity",
+    "clipboardRead",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content-scripts/cursor.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "matches": ["<all_urls>"],
+      "resources": ["images/cursor.png"]
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Antigravity Browser Bridge",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

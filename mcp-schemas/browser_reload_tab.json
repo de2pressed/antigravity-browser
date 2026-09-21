@@ -1,0 +1,1 @@
+{"name":"browser_reload_tab","description":"Reload an existing tab with optional cache bypass.","parameters":{"properties":{"ignoreCache":{"description":"Whether to bypass browser cache.","type":"boolean"},"tabId":{"description":"The ID of the tab to reload.","type":"number"}},"required":["tabId"],"type":"object"}}

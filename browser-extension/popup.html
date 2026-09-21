@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      width: 260px;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      color: #1a1a1a;
+      background: #fafafa;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+      border-bottom: 1px solid #e5e5e5;
+      padding-bottom: 10px;
+    }
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #10b981;
+    }
+    .title {
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .status-box {
+      background: #ffffff;
+      border: 1px solid #e5e5e5;
+      border-radius: 6px;
+      padding: 10px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #e0f2fe;
+      color: #0369a1;
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .footer {
+      margin-top: 12px;
+      font-size: 11px;
+      color: #737373;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="status-dot" id="statusDot"></div>
+    <div class="title">Antigravity Bridge</div>
+  </div>
+  <div class="status-box">
+    <div><strong>Host:</strong> <span class="badge" id="hostStatus">Connected</span></div>
+    <div style="margin-top: 6px;"><strong>CDP Engine:</strong> Active</div>
+    <div style="margin-top: 6px;"><strong>Port Mode:</strong> Native Messaging</div>
+  </div>
+  <div class="footer">Zero-prompt automation active</div>
+</body>
+</html>

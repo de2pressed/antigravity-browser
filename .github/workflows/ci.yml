@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Syntax Check JavaScript Files
+        run: |
+          node -c browser-bridge/bridge-daemon.js
+          node -c browser-bridge/host.js
+          node -c browser-bridge/cli.js
+          node -c browser-bridge/mcp-server.js
+          node -c browser-extension/background.js
+
+      - name: Validate MCP JSON Schemas
+        run: |
+          node -e '
+            const fs = require("fs");
+            const files = fs.readdirSync("mcp-schemas");
+            for (const f of files) {
+              if (f.endsWith(".json")) {
+                JSON.parse(fs.readFileSync(`mcp-schemas/${f}`, "utf8"));
+              }
+            }
+            console.log("All MCP schemas valid.");
+          '
+
+      - name: Validate Skill Frontmatters
+        run: |
+          node -e '
+            const fs = require("fs");
+            const skills = ["browser-control", "browser-google-sheets", "spreadsheets-mastery", "agent-browser", "playwright-interactive"];
+            for (const s of skills) {
+              const content = fs.readFileSync(`skills/${s}/SKILL.md`, "utf8");
+              if (!content.startsWith("---\n") || !content.includes("\n---")) {
+                throw new Error(`Invalid frontmatter in skill ${s}`);
+              }
+            }
+            console.log("All skill frontmatters valid.");
+          '

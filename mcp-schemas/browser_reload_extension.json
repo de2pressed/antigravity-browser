@@ -1,0 +1,1 @@
+{"name":"browser_reload_extension","description":"Hot reload the Antigravity Browser Bridge extension across all open Chrome profiles immediately without opening chrome://extensions.","parameters":{"properties":{},"type":"object"}}

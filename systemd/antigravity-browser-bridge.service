@@ -1,0 +1,14 @@
+[Unit]
+Description=Antigravity Browser Bridge Daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/home/jayant/.gemini/antigravity/browser-bridge/bridge-daemon-launcher.sh
+Restart=always
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

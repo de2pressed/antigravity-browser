@@ -1,0 +1,1 @@
+{"name":"browser_list_tabs","description":"List all open tabs across all Google Chrome windows and profiles (e.g. devops@qtloads.com, jayantdahiya1204@gmail.com) with tab IDs, titles, URLs, active status, and profile email.","parameters":{"properties":{},"type":"object"}}

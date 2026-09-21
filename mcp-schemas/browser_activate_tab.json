@@ -1,0 +1,1 @@
+{"name":"browser_activate_tab","description":"Switch to and bring a specific tab and its Chrome window into focus.","parameters":{"properties":{"tabId":{"description":"The ID of the tab to activate.","type":"number"}},"required":["tabId"],"type":"object"}}
