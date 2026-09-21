@@ -1,4 +1,4 @@
-// Antigravity Browser Bridge - Production Background Service Worker (v1.3.0)
+// Antigravity Browser Bridge - Production Background Service Worker (v1.5.1)
 const NATIVE_HOST = "com.google.antigravity.browser";
 
 let nativePort = null;
@@ -35,7 +35,29 @@ async function saveAgentOwnedTabs() {
   }
 }
 
-loadAgentOwnedTabs();
+// Startup Passive Sweep: Remove rogue overlays from any non-agent tabs
+async function cleanupNonAgentOverlays() {
+  try {
+    const tabs = await chrome.tabs.query({});
+    for (const tab of tabs) {
+      if (!agentOwnedTabs.has(tab.id) && tab.url && !tab.url.startsWith("chrome://") && !tab.url.startsWith("chrome-extension://")) {
+        chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => {
+            const el = document.getElementById("codex-agent-overlay-root");
+            if (el) el.remove();
+          }
+        }).catch(() => {});
+      }
+    }
+  } catch (e) {}
+}
+
+loadAgentOwnedTabs().then(() => cleanupNonAgentOverlays());
+
+chrome.runtime.onInstalled.addListener(() => {
+  cleanupNonAgentOverlays();
+});
 
 // 1. Native Messaging Lifecycle
 function connectNative() {
@@ -167,6 +189,9 @@ async function detectProfile() {
 
 // 3. Cursor Overlay Management
 async function ensureCursorScript(tabId) {
+  if (!agentOwnedTabs.has(tabId)) {
+    return false;
+  }
   try {
     const ping = await chrome.tabs.sendMessage(tabId, { type: "CONTENT_PING" });
     if (ping && ping.ok) return true;
@@ -188,12 +213,13 @@ function getOrCreateCursorState(tabId, overrides = {}) {
   const x = overrides.x !== undefined ? Math.round(overrides.x) : (existing?.cursor?.x ?? 250);
   const y = overrides.y !== undefined ? Math.round(overrides.y) : (existing?.cursor?.y ?? 250);
   const turnId = overrides.turnId || existing?.turnId || `turn_${Date.now()}`;
+  const isVisible = overrides.isVisible !== undefined ? overrides.isVisible : true;
   const state = {
-    isVisible: true,
+    isVisible,
     sessionId: "antigravity",
     turnId,
     cursor: {
-      visible: true,
+      visible: isVisible,
       x,
       y,
       animateMovement: overrides.animate !== false
@@ -203,9 +229,39 @@ function getOrCreateCursorState(tabId, overrides = {}) {
   return state;
 }
 
+function scheduleCursorAutoHide(tabId, delayMs = 3000) {
+  if (cursorTimers.has(tabId)) {
+    clearTimeout(cursorTimers.get(tabId));
+  }
+  const timer = setTimeout(async () => {
+    cursorTimers.delete(tabId);
+    await hideCursor(tabId);
+  }, delayMs);
+  cursorTimers.set(tabId, timer);
+}
+
+async function hideCursor(tabId) {
+  if (!agentOwnedTabs.has(tabId)) return;
+  const state = {
+    isVisible: false,
+    sessionId: "antigravity",
+    turnId: `turn_${Date.now()}`,
+    cursor: null
+  };
+  cursorStates.set(tabId, state);
+  try {
+    await chrome.tabs.sendMessage(tabId, {
+      type: "AGENT_CURSOR_STATE",
+      state
+    });
+  } catch (e) {}
+}
+
 async function publishCursorState(tabId, overrides = {}) {
+  if (!agentOwnedTabs.has(tabId)) return null;
   const state = getOrCreateCursorState(tabId, overrides);
-  await ensureCursorScript(tabId);
+  const injected = await ensureCursorScript(tabId);
+  if (!injected) return null;
   try {
     await chrome.tabs.sendMessage(tabId, {
       type: "AGENT_CURSOR_STATE",
@@ -216,19 +272,24 @@ async function publishCursorState(tabId, overrides = {}) {
 }
 
 async function updateCursor(tabId, x, y, options = {}) {
-  return await publishCursorState(tabId, { x, y, ...options });
+  if (!agentOwnedTabs.has(tabId)) return null;
+  const state = await publishCursorState(tabId, { x, y, isVisible: true, ...options });
+  scheduleCursorAutoHide(tabId, 3000);
+  return state;
 }
 
-// Ensure cursor is always visible on active tabs
-chrome.tabs.onActivated.addListener(async (activeInfo) => {
-  const tabId = activeInfo.tabId;
-  await publishCursorState(tabId, { animate: false });
-});
-
-// Ensure cursor is republished whenever a page finishes loading
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (changeInfo.status === "complete" && tab.url && !tab.url.startsWith("chrome://")) {
-    await publishCursorState(tabId, { animate: false });
+// Clean up state when tab is closed
+chrome.tabs.onRemoved.addListener((tabId) => {
+  attachedTabs.delete(tabId);
+  tabSnapshots.delete(tabId);
+  cursorStates.delete(tabId);
+  if (cursorTimers.has(tabId)) {
+    clearTimeout(cursorTimers.get(tabId));
+    cursorTimers.delete(tabId);
+  }
+  if (agentOwnedTabs.has(tabId)) {
+    agentOwnedTabs.delete(tabId);
+    saveAgentOwnedTabs();
   }
 });
 
@@ -236,7 +297,11 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "GET_AGENT_CURSOR_STATE") {
     const tabId = sender.tab?.id;
-    const state = getOrCreateCursorState(tabId);
+    if (!tabId || !agentOwnedTabs.has(tabId)) {
+      sendResponse({ ok: true, state: { isVisible: false, cursor: null } });
+      return true;
+    }
+    const state = cursorStates.get(tabId) || { isVisible: false, cursor: null };
     sendResponse({ ok: true, state });
     return true;
   }
@@ -447,6 +512,10 @@ async function closeTab(params) {
   attachedTabs.delete(tabId);
   tabSnapshots.delete(tabId);
   cursorStates.delete(tabId);
+  if (cursorTimers.has(tabId)) {
+    clearTimeout(cursorTimers.get(tabId));
+    cursorTimers.delete(tabId);
+  }
   agentOwnedTabs.delete(tabId);
   await saveAgentOwnedTabs();
   return { success: true, tabId };
@@ -460,6 +529,10 @@ async function closeAgentTabs() {
       attachedTabs.delete(tabId);
       tabSnapshots.delete(tabId);
       cursorStates.delete(tabId);
+      if (cursorTimers.has(tabId)) {
+        clearTimeout(cursorTimers.get(tabId));
+        cursorTimers.delete(tabId);
+      }
       agentOwnedTabs.delete(tabId);
       closed.push(tabId);
     } catch (e) {}
@@ -581,6 +654,10 @@ chrome.debugger.onDetach.addListener((source) => {
     attachedTabs.delete(source.tabId);
     tabSnapshots.delete(source.tabId);
     cursorStates.delete(source.tabId);
+    if (cursorTimers.has(source.tabId)) {
+      clearTimeout(cursorTimers.get(source.tabId));
+      cursorTimers.delete(source.tabId);
+    }
     chrome.action.setBadgeText({ text: "", tabId: source.tabId });
   }
 });
