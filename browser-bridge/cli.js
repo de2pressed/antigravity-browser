@@ -94,7 +94,7 @@ Usage:
     } else if (cmd === "list-tabs" || cmd === "tabs") {
       const res = await callDaemon("list_tabs");
       console.log(JSON.stringify(res, null, 2));
-    } else if (cmd === "new-tab") {
+    } else if (cmd === "new-tab" || cmd === "new") {
       let profile = null;
       let url = "about:blank";
       let foreground = false;
@@ -119,7 +119,7 @@ Usage:
       const tabId = parseInt(args[1], 10);
       const res = await callDaemon("activate_tab", { tabId });
       console.log(JSON.stringify(res, null, 2));
-    } else if (cmd === "snapshot") {
+    } else if (cmd === "snapshot" || cmd === "snap") {
       const tabId = parseInt(args[1], 10);
       const res = await callDaemon("snapshot", { tabId });
       console.log(res.tree || JSON.stringify(res, null, 2));
