@@ -1,6 +1,6 @@
 // Antigravity Browser Bridge - Minimalist Modern Studio Cursor (v1.6.0)
-// High-precision vector cursor with Figma/macOS aesthetics, dynamic velocity banking,
-// interactive click ripples, state-aware aura (breathing/thinking), and typing beam mode.
+// High-precision compact vector cursor with Figma/macOS aesthetics, dynamic velocity banking,
+// interactive click ripples, inline loading circle next to Antigravity text, and typing beam mode.
 
 (function () {
   const OVERLAY_ID = "codex-agent-overlay-root"; // Retain id for backward compatibility
@@ -12,8 +12,8 @@
   let tracker = null;
   let pointerWrapper = null;
   let cursorAura = null;
-  let thinkingSpinner = null;
   let typingBeam = null;
+  let badgeSpinner = null;
   let badgeText = null;
   let ripplesLayer = null;
 
@@ -56,74 +56,49 @@
       height: 0;
       will-change: transform;
       pointer-events: none;
-      transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
-    /* Ambient Breathing Aura */
+    /* Ambient Breathing Aura - Compact & Subtle */
     .cursor-aura {
       position: absolute;
-      top: -24px;
-      left: -24px;
-      width: 54px;
-      height: 54px;
+      top: -18px;
+      left: -18px;
+      width: 36px;
+      height: 36px;
       border-radius: 50%;
-      background: radial-gradient(circle, rgba(56, 189, 248, 0.22) 0%, rgba(99, 102, 241, 0.08) 55%, transparent 72%);
+      background: radial-gradient(circle, rgba(56, 189, 248, 0.22) 0%, rgba(99, 102, 241, 0.06) 55%, transparent 72%);
       pointer-events: none;
-      animation: aura-breathe 2.8s ease-in-out infinite alternate;
+      animation: aura-breathe 2.6s ease-in-out infinite alternate;
       transition: opacity 0.3s ease;
     }
     @keyframes aura-breathe {
-      0% { transform: scale(0.85); opacity: 0.45; }
-      100% { transform: scale(1.22); opacity: 0.9; }
-    }
-
-    /* Thinking / Executing Orbit Spinner */
-    .thinking-spinner {
-      position: absolute;
-      top: -14px;
-      left: -14px;
-      width: 30px;
-      height: 30px;
-      border-radius: 50%;
-      border: 2px solid transparent;
-      border-top-color: #38bdf8;
-      border-right-color: #818cf8;
-      pointer-events: none;
-      opacity: 0;
-      transform: scale(0.7);
-      transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-    }
-    .thinking-spinner.active {
-      opacity: 1;
-      transform: scale(1);
-      animation: spin-orbit 0.85s linear infinite;
-    }
-    @keyframes spin-orbit {
-      to { transform: rotate(360deg); }
+      0% { transform: scale(0.85); opacity: 0.4; }
+      100% { transform: scale(1.15); opacity: 0.85; }
     }
 
     /* Typing Beam Indicator */
     .typing-beam {
       position: absolute;
-      top: -2px;
+      top: -1px;
       left: -1px;
-      width: 2.5px;
-      height: 22px;
+      width: 2px;
+      height: 16px;
       border-radius: 2px;
       background: linear-gradient(180deg, #38bdf8 0%, #818cf8 100%);
-      box-shadow: 0 0 10px rgba(56, 189, 248, 0.85);
+      box-shadow: 0 0 8px rgba(56, 189, 248, 0.85);
       opacity: 0;
       transform: scaleY(0.5);
       pointer-events: none;
-      transition: opacity 0.2s ease, transform 0.2s ease;
+      transition: opacity 0.18s ease, transform 0.18s ease;
     }
     .typing-beam.active {
       opacity: 1;
       animation: typing-pulse 0.75s ease-in-out infinite alternate;
     }
     @keyframes typing-pulse {
-      0% { opacity: 0.35; transform: scaleY(0.7); }
-      100% { opacity: 1; transform: scaleY(1.15); }
+      0% { opacity: 0.35; transform: scaleY(0.75); }
+      100% { opacity: 1; transform: scaleY(1.1); }
     }
 
     /* Pointer Wrapper (Tilts & Stretches during Velocity Glide) */
@@ -133,14 +108,14 @@
       left: 0;
       transform-origin: 0 0;
       will-change: transform;
-      transition: transform 0.08s ease-out;
+      transition: transform 0.08s cubic-bezier(0.16, 1, 0.3, 1);
     }
     .pointer-wrapper.pressed {
-      transform: scale(0.85) !important;
-      transition: transform 0.06s ease-in !important;
+      transform: scale(0.88) !important;
+      transition: transform 0.05s ease-in !important;
     }
 
-    /* Minimalist Studio Vector Pointer */
+    /* Minimalist Studio Vector Pointer - Compact 16px Size */
     .pointer-svg {
       display: block;
       overflow: visible;
@@ -150,38 +125,55 @@
     /* Minimalist Studio Pill Badge */
     .agent-badge {
       position: absolute;
-      left: 18px;
-      top: 16px;
-      display: flex;
+      left: 14px;
+      top: 13px;
+      display: inline-flex;
       align-items: center;
-      gap: 5px;
-      padding: 3px 8px 3px 6px;
+      gap: 4px;
+      padding: 2.5px 7px 2.5px 5.5px;
       border-radius: 9999px;
-      background: rgba(24, 24, 27, 0.88);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35), 0 0 1px rgba(255, 255, 255, 0.2);
+      background: rgba(24, 24, 27, 0.90);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      box-shadow: 0 2px 7px rgba(0, 0, 0, 0.36), 0 0 1px rgba(255, 255, 255, 0.2);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      font-size: 10px;
+      font-size: 9px;
       font-weight: 600;
       color: #ffffff;
       letter-spacing: 0.02em;
       white-space: nowrap;
       pointer-events: none;
-      transition: all 0.2s ease;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
     .badge-dot {
-      width: 5px;
-      height: 5px;
+      width: 4.5px;
+      height: 4.5px;
       border-radius: 50%;
       background: #38bdf8;
-      box-shadow: 0 0 6px #38bdf8;
+      box-shadow: 0 0 5px #38bdf8;
       animation: dot-pulse 1.8s ease-in-out infinite alternate;
+      flex-shrink: 0;
     }
     @keyframes dot-pulse {
-      0% { opacity: 0.5; transform: scale(0.8); }
-      100% { opacity: 1; transform: scale(1.2); }
+      0% { opacity: 0.5; transform: scale(0.85); }
+      100% { opacity: 1; transform: scale(1.15); }
+    }
+
+    /* Loading Circle Next to Antigravity Text */
+    .badge-spinner {
+      display: none;
+      width: 9px;
+      height: 9px;
+      animation: spin-orbit 0.75s linear infinite;
+      margin-left: 2px;
+      flex-shrink: 0;
+    }
+    .badge-spinner.active {
+      display: inline-block;
+    }
+    @keyframes spin-orbit {
+      to { transform: rotate(360deg); }
     }
 
     /* Concentric Click Ripple */
@@ -193,14 +185,18 @@
       margin-top: -16px;
       border-radius: 50%;
       border: 2px solid rgba(56, 189, 248, 0.95);
-      box-shadow: 0 0 12px rgba(56, 189, 248, 0.6);
+      background: radial-gradient(circle, rgba(56, 189, 248, 0.22) 0%, rgba(99, 102, 241, 0.08) 50%, transparent 72%);
+      box-shadow: 0 0 16px rgba(56, 189, 248, 0.7);
       pointer-events: none;
-      animation: ripple-wave 0.55s cubic-bezier(0.1, 0.85, 0.25, 1) forwards;
+      animation: ripple-wave 0.75s cubic-bezier(0.12, 0.8, 0.24, 1) forwards;
     }
     @keyframes ripple-wave {
       0% {
-        transform: scale(0.2);
-        opacity: 0.95;
+        transform: scale(0.25);
+        opacity: 1;
+      }
+      50% {
+        opacity: 0.85;
       }
       100% {
         transform: scale(2.8);
@@ -239,15 +235,10 @@
     tracker.className = "cursor-tracker";
     tracker.style.transform = `translate3d(${currentX}px, ${currentY}px, 0)`;
 
-    // Aura
+    // Ambient aura
     cursorAura = document.createElement("div");
     cursorAura.className = "cursor-aura";
     tracker.appendChild(cursorAura);
-
-    // Thinking spinner
-    thinkingSpinner = document.createElement("div");
-    thinkingSpinner.className = "thinking-spinner";
-    tracker.appendChild(thinkingSpinner);
 
     // Typing beam
     typingBeam = document.createElement("div");
@@ -258,29 +249,35 @@
     pointerWrapper = document.createElement("div");
     pointerWrapper.className = "pointer-wrapper";
 
-    // Crisp Studio Vector Pointer SVG (Figma / macOS minimalist style)
+    // Compact Vector Pointer SVG (16px size with crisp Figma / macOS minimalist styling)
     pointerWrapper.innerHTML = `
-      <svg class="pointer-svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+      <svg class="pointer-svg" width="16" height="16" viewBox="0 0 24 24" fill="none">
         <defs>
-          <filter id="studio-shadow" x="-30%" y="-30%" width="160%" height="160%">
-            <feDropShadow dx="0" dy="2.5" stdDeviation="3" flood-color="rgba(0, 0, 0, 0.45)" />
-            <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="rgba(0, 0, 0, 0.3)" />
+          <filter id="studio-shadow" x="-40%" y="-40%" width="180%" height="180%">
+            <feDropShadow dx="0" dy="1.8" stdDeviation="1.8" flood-color="rgba(0, 0, 0, 0.45)" />
+            <feDropShadow dx="0" dy="0.8" stdDeviation="0.8" flood-color="rgba(0, 0, 0, 0.3)" />
           </filter>
         </defs>
         <path d="M0 0 L0 18 L5 13.5 L9 21.5 L12 20 L8 12.5 L15 12.5 Z" 
               fill="#18181b" 
               stroke="#ffffff" 
-              stroke-width="1.6" 
+              stroke-width="1.8" 
               stroke-linejoin="round"
               filter="url(#studio-shadow)" />
       </svg>
       <div class="agent-badge">
         <span class="badge-dot"></span>
         <span class="badge-text">Antigravity</span>
+        <svg class="badge-spinner" width="9" height="9" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="6" stroke="rgba(255, 255, 255, 0.22)" stroke-width="2.5" />
+          <path d="M14 8a6 6 0 0 0-6-6" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" />
+        </svg>
       </div>
     `;
 
     badgeText = pointerWrapper.querySelector(".badge-text");
+    badgeSpinner = pointerWrapper.querySelector(".badge-spinner");
+
     tracker.appendChild(pointerWrapper);
     viewport.appendChild(tracker);
     shadowRoot.appendChild(viewport);
@@ -300,28 +297,28 @@
       const dy = targetY - currentY;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
-      if (dist < 0.5) {
+      if (dist < 0.3) {
         currentX = targetX;
         currentY = targetY;
-        currentTilt += (0 - currentTilt) * 0.2;
-        currentStretch += (1 - currentStretch) * 0.2;
-        currentSqueeze += (1 - currentSqueeze) * 0.2;
+        currentTilt += (0 - currentTilt) * 0.25;
+        currentStretch += (1 - currentStretch) * 0.25;
+        currentSqueeze += (1 - currentSqueeze) * 0.25;
       } else {
-        // Smooth responsive spring movement
-        const factor = Math.min(0.28, Math.max(0.18, dist / 800));
+        // Refined responsive spring motion
+        const factor = Math.min(0.24, Math.max(0.16, dist / 900));
         currentX += dx * factor;
         currentY += dy * factor;
 
-        // Dynamic velocity banking (tilts slightly in motion angle)
+        // Subtle, refined velocity banking: max tilt +/-15 deg
         const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-        const desiredTilt = Math.max(-24, Math.min(24, (angle - 45) * 0.32));
-        currentTilt += (desiredTilt - currentTilt) * 0.25;
+        const desiredTilt = Math.max(-15, Math.min(15, (angle - 45) * 0.2));
+        currentTilt += (desiredTilt - currentTilt) * 0.2;
 
-        // Velocity stretch along motion vector
-        const desiredStretch = 1 + Math.min(0.18, dist / 700);
-        const desiredSqueeze = 1 - Math.min(0.08, dist / 1400);
-        currentStretch += (desiredStretch - currentStretch) * 0.25;
-        currentSqueeze += (desiredSqueeze - currentSqueeze) * 0.25;
+        // Subtle velocity stretch
+        const desiredStretch = 1 + Math.min(0.08, dist / 1400);
+        const desiredSqueeze = 1 - Math.min(0.04, dist / 2800);
+        currentStretch += (desiredStretch - currentStretch) * 0.2;
+        currentSqueeze += (desiredSqueeze - currentSqueeze) * 0.2;
       }
 
       if (tracker) {
@@ -348,7 +345,7 @@
       pointerWrapper.classList.add("pressed");
       setTimeout(() => {
         if (pointerWrapper) pointerWrapper.classList.remove("pressed");
-      }, 90);
+      }, 80);
     }
 
     const ripple = document.createElement("div");
@@ -381,11 +378,11 @@
   function setCursorMode(mode, customBadge = "") {
     currentMode = mode;
 
-    if (thinkingSpinner) {
+    if (badgeSpinner) {
       if (mode === "thinking") {
-        thinkingSpinner.classList.add("active");
+        badgeSpinner.classList.add("active");
       } else {
-        thinkingSpinner.classList.remove("active");
+        badgeSpinner.classList.remove("active");
       }
     }
 
@@ -400,8 +397,6 @@
     if (badgeText) {
       if (customBadge) {
         badgeText.textContent = customBadge;
-      } else if (mode === "thinking") {
-        badgeText.textContent = "Thinking...";
       } else if (mode === "typing") {
         badgeText.textContent = "Typing...";
       } else {
