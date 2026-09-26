@@ -410,7 +410,7 @@ rl.on("line", async (line) => {
       result: {
         protocolVersion: "2024-11-05",
         capabilities: { tools: {} },
-        serverInfo: { name: "antigravity_browser", version: "1.3.0" }
+        serverInfo: { name: "antigravity_browser", version: "1.6.0" }
       }
     });
   }

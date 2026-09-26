@@ -1,8 +1,1 @@
-{
-  "name": "browser_close_agent_tabs",
-  "description": "Cleanly close all temporary/scratch tabs created by the agent during this session, leaving user personal tabs untouched.",
-  "parameters": {
-    "type": "object",
-    "properties": {}
-  }
-}
+{"name":"browser_close_agent_tabs","description":"Cleanly close all temporary/scratch tabs created by the agent during this session, leaving user personal tabs untouched.","parameters":{"properties":{},"type":"object"}}

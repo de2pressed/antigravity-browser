@@ -4,9 +4,12 @@ const net = require("net");
 const fs = require("fs");
 const path = require("path");
 
+const { execSync } = require("child_process");
+
 const SOCKET_PATH = "/tmp/antigravity-browser-bridge.sock";
 const LOG_FILE = "/tmp/antigravity-daemon.log";
-const EXT_DIR = "/home/jayant/.gemini/antigravity/browser-extension";
+const EXT_DIR_RAW = "/home/jayant/.gemini/antigravity/browser-extension";
+const EXT_DIR = fs.existsSync(EXT_DIR_RAW) ? fs.realpathSync(EXT_DIR_RAW) : EXT_DIR_RAW;
 
 function log(str) {
   try {
@@ -279,7 +282,17 @@ try {
       if (!filename || filename.startsWith(".") || filename.endsWith("~")) return;
       if (reloadDebounce) clearTimeout(reloadDebounce);
       reloadDebounce = setTimeout(async () => {
-        log(`Extension source file modified (${filename}). Triggering hot reload.`);
+        log(`Extension source file modified (${filename}). Checking syntax before reload.`);
+        if (filename.endsWith(".js")) {
+          const filePath = path.join(EXT_DIR, filename);
+          try {
+            execSync(`node --check "${filePath}"`, { stdio: "pipe" });
+          } catch (err) {
+            log(`Syntax check failed for ${filename}: ${err.message}. Aborting hot reload.`);
+            return;
+          }
+        }
+        log(`Syntax check passed. Triggering hot reload on active hosts.`);
         const activeHosts = Array.from(hosts.values());
         for (const h of activeHosts) {
           try {

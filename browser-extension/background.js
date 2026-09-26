@@ -210,7 +210,7 @@ async function ensureCursorScript(tabId) {
 
 function getOrCreateCursorState(tabId, overrides = {}) {
   let existing = cursorStates.get(tabId);
-  const x = overrides.x !== undefined ? Math.round(overrides.x) : (existing?.cursor?.x ?? 250);
+  const x = overrides.x !== undefined ? Math.round(overrides.x) : (existing?.cursor?.x ?? 350);
   const y = overrides.y !== undefined ? Math.round(overrides.y) : (existing?.cursor?.y ?? 250);
   const turnId = overrides.turnId || existing?.turnId || `turn_${Date.now()}`;
   const isVisible = overrides.isVisible !== undefined ? overrides.isVisible : true;
@@ -229,19 +229,7 @@ function getOrCreateCursorState(tabId, overrides = {}) {
   return state;
 }
 
-function scheduleCursorAutoHide(tabId, delayMs = 3000) {
-  if (cursorTimers.has(tabId)) {
-    clearTimeout(cursorTimers.get(tabId));
-  }
-  const timer = setTimeout(async () => {
-    cursorTimers.delete(tabId);
-    await hideCursor(tabId);
-  }, delayMs);
-  cursorTimers.set(tabId, timer);
-}
-
 async function hideCursor(tabId) {
-  if (!agentOwnedTabs.has(tabId)) return;
   const state = {
     isVisible: false,
     sessionId: "antigravity",
@@ -271,12 +259,20 @@ async function publishCursorState(tabId, overrides = {}) {
   return state;
 }
 
+// Persistent visual cursor: always active on agent-owned tabs with zero auto-hide
 async function updateCursor(tabId, x, y, options = {}) {
   if (!agentOwnedTabs.has(tabId)) return null;
-  const state = await publishCursorState(tabId, { x, y, isVisible: true, ...options });
-  scheduleCursorAutoHide(tabId, 3000);
-  return state;
+  return await publishCursorState(tabId, { x, y, isVisible: true, ...options });
 }
+
+// Automatically restore persistent cursor on agent-owned tabs upon navigation or reload
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.status === "complete" && agentOwnedTabs.has(tabId)) {
+    if (tab.url && !tab.url.startsWith("chrome://") && !tab.url.startsWith("chrome-extension://")) {
+      await publishCursorState(tabId, { isVisible: true });
+    }
+  }
+});
 
 // Clean up state when tab is closed
 chrome.tabs.onRemoved.addListener((tabId) => {
@@ -327,6 +323,15 @@ async function handleRequest(msg) {
         profileIdentity = await detectProfile();
         result = profileIdentity;
         break;
+      case "set_profile":
+        if (params.profile && params.profile.email && params.profile.email !== "unknown") {
+          profileIdentity = { ...profileIdentity, ...params.profile };
+          try {
+            await chrome.storage.local.set({ profileEmail: profileIdentity.email });
+          } catch (e) {}
+        }
+        result = profileIdentity;
+        break;
       case "reload_extension":
         console.log("[Antigravity Bridge] Self-reload requested by bridge host.");
         sendToHost({ id, result: { reloading: true } });
@@ -350,62 +355,69 @@ async function handleRequest(msg) {
         result = await activateTab(params);
         break;
       case "close_tab":
+        await checkTabSafety(params);
         result = await closeTab(params);
         break;
       case "navigate":
+        await checkTabSafety(params);
         result = await navigateTab(params);
         break;
       case "reload_tab":
+        await checkTabSafety(params);
         result = await reloadTab(params);
         break;
       case "go_back":
+        await checkTabSafety(params);
         result = await goBack(params);
         break;
       case "go_forward":
+        await checkTabSafety(params);
         result = await goForward(params);
         break;
       case "snapshot":
         result = await takeSnapshot(params);
         break;
       case "click":
-        checkTabSafety(params);
+        await checkTabSafety(params);
         result = await clickElement(params);
         break;
       case "hover":
-        checkTabSafety(params);
+        await checkTabSafety(params);
         result = await hoverElement(params);
         break;
       case "drag":
-        checkTabSafety(params);
+        await checkTabSafety(params);
         result = await dragElement(params);
         break;
       case "type":
-        checkTabSafety(params);
+        await checkTabSafety(params);
         result = await typeText(params);
         break;
       case "press_key":
-        checkTabSafety(params);
+        await checkTabSafety(params);
         result = await pressKey(params);
         break;
       case "scroll":
+        await checkTabSafety(params);
         result = await scrollTab(params);
         break;
       case "screenshot":
         result = await captureScreenshot(params);
         break;
       case "evaluate":
+        await checkTabSafety(params);
         result = await evaluateScript(params);
         break;
       case "find_and_click":
-        checkTabSafety(params);
+        await checkTabSafety(params);
         result = await findAndClick(params);
         break;
       case "paste":
-        checkTabSafety(params);
+        await checkTabSafety(params);
         result = await pasteClipboard(params);
         break;
       case "run_actions":
-        checkTabSafety(params);
+        await checkTabSafety(params);
         result = await runActions(params);
         break;
       default:
@@ -438,6 +450,8 @@ async function claimTab(params = {}) {
   agentOwnedTabs.add(tab.id);
   await saveAgentOwnedTabs();
   await ensureDebugger(tab.id);
+  // Immediately initialize and show persistent visual cursor on claimed tab
+  await publishCursorState(tab.id, { x: 350, y: 250, isVisible: true });
   return {
     success: true,
     tabId: tab.id,
@@ -479,6 +493,10 @@ async function newTab(params = {}) {
     await waitForTabComplete(tab.id, params.timeout || 25000);
   }
   const loaded = await chrome.tabs.get(tab.id);
+  // Establish persistent visual cursor state on new agent tab
+  if (loaded.url && !loaded.url.startsWith("chrome://") && !loaded.url.startsWith("chrome-extension://")) {
+    publishCursorState(loaded.id, { x: 350, y: 250, isVisible: true }).catch(() => {});
+  }
   return {
     tabId: loaded.id,
     windowId: loaded.windowId,
@@ -582,8 +600,17 @@ async function goForward(params) {
 }
 
 function waitForTabComplete(tabId, timeoutMs = 25000) {
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
     let resolved = false;
+
+    // Fast-path: check if tab is already complete to avoid 25-second hang
+    try {
+      const initial = await chrome.tabs.get(tabId);
+      if (initial && initial.status === "complete") {
+        return resolve();
+      }
+    } catch (e) {}
+
     const timer = setTimeout(() => {
       if (!resolved) {
         resolved = true;
@@ -607,12 +634,23 @@ function waitForTabComplete(tabId, timeoutMs = 25000) {
 }
 
 // 6. CDP Debugger Engine
+// Single global listener for modal dialogs to prevent deadlocks and avoid listener leaks
+chrome.debugger.onEvent.addListener((source, method, eventParams) => {
+  if (method === "Page.javascriptDialogOpening" && source?.tabId) {
+    cdpSend(source.tabId, "Page.handleJavaScriptDialog", { accept: true }).catch(() => {});
+  }
+});
+
 async function ensureDebugger(tabId) {
   if (attachedTabs.has(tabId)) return;
 
   await new Promise((resolve, reject) => {
     chrome.debugger.attach({ tabId }, "1.3", () => {
       if (chrome.runtime.lastError) {
+        if (chrome.runtime.lastError.message?.includes("already attached")) {
+          attachedTabs.add(tabId);
+          return resolve();
+        }
         return reject(new Error(chrome.runtime.lastError.message));
       }
       attachedTabs.add(tabId);
@@ -629,13 +667,6 @@ async function ensureDebugger(tabId) {
   await cdpSend(tabId, "Runtime.enable").catch(() => {});
   // Bypass background tab throttling so WebSockets, timers, and React hydration run at full speed
   await cdpSend(tabId, "Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => {});
-
-  // Automatically dismiss or accept modal dialogs to prevent deadlocks
-  chrome.debugger.onEvent.addListener((source, method, eventParams) => {
-    if (source.tabId === tabId && method === "Page.javascriptDialogOpening") {
-      cdpSend(tabId, "Page.handleJavaScriptDialog", { accept: true }).catch(() => {});
-    }
-  });
 }
 
 function cdpSend(tabId, method, params = {}) {
@@ -744,14 +775,35 @@ async function resolveElementCoords(tabId, uid, explicitX, explicitY) {
       await cdpSend(tabId, "DOM.scrollIntoViewIfNeeded", { backendNodeId: elem.backendDOMNodeId });
     } catch (e) {}
 
-    const box = await cdpSend(tabId, "DOM.getBoxModel", { backendNodeId: elem.backendDOMNodeId });
-    if (box?.model?.content) {
-      const c = box.model.content;
-      return {
-        x: Math.round((c[0] + c[2] + c[4] + c[6]) / 4),
-        y: Math.round((c[1] + c[3] + c[5] + c[7]) / 4)
-      };
-    }
+    try {
+      const box = await cdpSend(tabId, "DOM.getBoxModel", { backendNodeId: elem.backendDOMNodeId });
+      if (box?.model?.content) {
+        const c = box.model.content;
+        return {
+          x: Math.round((c[0] + c[2] + c[4] + c[6]) / 4),
+          y: Math.round((c[1] + c[3] + c[5] + c[7]) / 4)
+        };
+      }
+    } catch (e) {}
+
+    // Fallback: Resolve node to JS object and evaluate getBoundingClientRect
+    try {
+      const { object } = await cdpSend(tabId, "DOM.resolveNode", { backendNodeId: elem.backendDOMNodeId });
+      if (object?.objectId) {
+        const evalRes = await cdpSend(tabId, "Runtime.callFunctionOn", {
+          objectId: object.objectId,
+          functionDeclaration: `function() {
+            const r = this.getBoundingClientRect();
+            return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), w: r.width, h: r.height };
+          }`,
+          returnByValue: true
+        });
+        const val = evalRes?.result?.value;
+        if (val && (val.x > 0 || val.y > 0 || val.w > 0)) {
+          return { x: val.x, y: val.y };
+        }
+      }
+    } catch (e) {}
   }
 
   throw new Error(`Unable to calculate screen coordinates for UID '${uid}'.`);
@@ -862,7 +914,7 @@ async function typeText(params) {
     await cdpSend(tabId, "Input.insertText", { text });
   }
 
-  if (params.pressEnter) {
+  if (params.pressEnter || params.enter) {
     await pressKey({ tabId, key: "Enter" });
   }
 
@@ -1098,22 +1150,26 @@ async function pasteClipboard(params) {
         const target = document.getElementById('waffle-rich-text-editor') ||
                        document.activeElement ||
                        document.body;
+        const isStandardInput = (target instanceof HTMLInputElement) || (target instanceof HTMLTextAreaElement);
         target.dispatchEvent(evt);
-        return { ok: true, clipboardWriteSuccess, targetDispatched: true };
+        return { ok: true, isStandardInput, clipboardWriteSuccess, targetDispatched: true };
       } catch (err) {
         return { ok: false, error: err.message, clipboardWriteSuccess };
       }
     })()
   `;
 
-  await cdpSend(tabId, "Runtime.evaluate", {
+  const evalRes = await cdpSend(tabId, "Runtime.evaluate", {
     expression: pasteExpression,
     returnByValue: true,
     awaitPromise: true
   });
+  const resVal = evalRes?.result?.value;
 
-  // Also dispatch hardware Ctrl+V to ensure any native Blink or canvas listeners catch it
-  await pressKey({ tabId, key: "v", ctrl: true });
+  // Only dispatch hardware Ctrl+V for custom canvas/rich editors (e.g. Google Sheets) to avoid duplicate paste in standard inputs
+  if (!resVal?.isStandardInput) {
+    await pressKey({ tabId, key: "v", ctrl: true });
+  }
 
   return { success: true, tabId, pastedLength: text.length, hasHtml: !!html };
 }
@@ -1128,6 +1184,7 @@ async function runActions(params) {
   for (let i = 0; i < actions.length; i++) {
     const act = actions[i];
     const actTabId = act.tabId ? parseInt(act.tabId, 10) : tabId;
+    await checkTabSafety({ tabId: actTabId, allowExistingTab: params.allowExistingTab });
     let res = null;
 
     switch (act.action || act.type) {

@@ -18,7 +18,53 @@ log(`Native host starting up. Args: ${JSON.stringify(process.argv)}`);
 
 let mcpSocket = null;
 let reconnectTimer = null;
-let profileInfo = { email: "unknown", name: "default" };
+
+function detectLocalChromeProfile() {
+  try {
+    let profileDir = "Default";
+    let ppid = process.ppid;
+    for (let depth = 0; depth < 5 && ppid > 1; depth++) {
+      const cmdlinePath = `/proc/${ppid}/cmdline`;
+      if (fs.existsSync(cmdlinePath)) {
+        const cmdline = fs.readFileSync(cmdlinePath, "utf8");
+        const match = cmdline.match(/--profile-directory=([^\0]+)/);
+        if (match) {
+          profileDir = match[1];
+          break;
+        }
+        if (cmdline.includes("chrome")) {
+          profileDir = "Default";
+        }
+        const statusPath = `/proc/${ppid}/status`;
+        if (fs.existsSync(statusPath)) {
+          const status = fs.readFileSync(statusPath, "utf8");
+          const pmatch = status.match(/PPid:\s+(\d+)/);
+          ppid = pmatch ? parseInt(pmatch[1], 10) : 0;
+        } else {
+          break;
+        }
+      } else {
+        break;
+      }
+    }
+
+    const homeDir = process.env.HOME || "/home/jayant";
+    const prefPath = path.join(homeDir, ".config/google-chrome", profileDir, "Preferences");
+    if (fs.existsSync(prefPath)) {
+      const data = JSON.parse(fs.readFileSync(prefPath, "utf8"));
+      const accounts = data.account_info || [];
+      const email = accounts[0]?.email || (data.profile?.name && data.profile.name.includes("@") ? data.profile.name : "unknown");
+      const domain = email.includes("@") ? email.split("@")[1] : "";
+      return { email, domain, profileDir, name: data.profile?.name || profileDir };
+    }
+  } catch (e) {
+    log(`detectLocalChromeProfile error: ${e.message}`);
+  }
+  return { email: "unknown", domain: "", name: "default" };
+}
+
+let profileInfo = detectLocalChromeProfile();
+log(`Initialized native host with profile: ${JSON.stringify(profileInfo)}`);
 
 // 1. Chrome Native Messaging on stdin / stdout (4-byte uint32-LE framing)
 let inputBuffer = Buffer.alloc(0);
@@ -66,9 +112,9 @@ function sendToChrome(msg) {
 function onChromeMessage(msg) {
   // Check if this is a profile detection response
   if (msg.id && typeof msg.id === "string" && msg.id.startsWith("reg_profile_")) {
-    if (msg.result) {
-      profileInfo = msg.result;
-      log(`Detected Chrome profile: ${JSON.stringify(profileInfo)}`);
+    if (msg.result && msg.result.email && msg.result.email !== "unknown") {
+      profileInfo = { ...profileInfo, ...msg.result };
+      log(`Updated Chrome profile from extension: ${JSON.stringify(profileInfo)}`);
       sendRegistration();
     }
     return;
@@ -76,8 +122,13 @@ function onChromeMessage(msg) {
 
   // Check if this is a handshake from extension
   if (msg.type === "handshake" && msg.profile) {
-    profileInfo = msg.profile;
-    log(`Received handshake from Chrome extension: ${JSON.stringify(profileInfo)}`);
+    if (msg.profile.email && msg.profile.email !== "unknown") {
+      profileInfo = { ...profileInfo, ...msg.profile };
+      log(`Updated Chrome profile from handshake: ${JSON.stringify(profileInfo)}`);
+    } else if (profileInfo.email && profileInfo.email !== "unknown") {
+      // Feed our locally detected profile back to the extension
+      sendToChrome({ method: "set_profile", params: { profile: profileInfo } });
+    }
     sendRegistration();
     return;
   }

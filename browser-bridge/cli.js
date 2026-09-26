@@ -281,6 +281,8 @@ Usage:
         if (args[i] === "--html" && args[i + 1]) {
           html = args[i + 1];
           i++;
+        } else if (args[i].startsWith("--")) {
+          continue;
         } else if (!text) {
           text = args[i];
         } else {
