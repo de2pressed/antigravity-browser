@@ -11,7 +11,6 @@
   let shadowRoot = null;
   let tracker = null;
   let pointerWrapper = null;
-  let cursorAura = null;
   let badgeSpinner = null;
   let badgeText = null;
 
@@ -55,24 +54,6 @@
       will-change: transform;
       pointer-events: none;
       transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    /* Ambient Breathing Aura - Balanced & Subtle */
-    .cursor-aura {
-      position: absolute;
-      top: -21px;
-      left: -21px;
-      width: 42px;
-      height: 42px;
-      border-radius: 50%;
-      background: radial-gradient(circle, rgba(56, 189, 248, 0.22) 0%, rgba(99, 102, 241, 0.06) 55%, transparent 72%);
-      pointer-events: none;
-      animation: aura-breathe 2.6s ease-in-out infinite alternate;
-      transition: opacity 0.3s ease;
-    }
-    @keyframes aura-breathe {
-      0% { transform: scale(0.85); opacity: 0.4; }
-      100% { transform: scale(1.15); opacity: 0.85; }
     }
 
     /* Pointer Wrapper (Tilts & Stretches during Velocity Glide) */
@@ -176,11 +157,6 @@
     tracker = document.createElement("div");
     tracker.className = "cursor-tracker";
     tracker.style.transform = `translate3d(${currentX}px, ${currentY}px, 0)`;
-
-    // Ambient aura
-    cursorAura = document.createElement("div");
-    cursorAura.className = "cursor-aura";
-    tracker.appendChild(cursorAura);
 
     // Pointer wrapper
     pointerWrapper = document.createElement("div");
