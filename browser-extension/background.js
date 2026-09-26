@@ -713,6 +713,9 @@ async function takeSnapshot(params) {
     const value = node.value?.value?.trim() || "";
     const description = node.description?.value?.trim() || "";
 
+    // Exclude agent cursor overlay labels from page snapshot
+    if (name === "Antigravity" || name === "Thinking..." || name === "Typing...") continue;
+
     const isInteractive = [
       "button", "link", "combobox", "textbox", "searchbox", "checkbox",
       "radio", "menuitem", "tab", "row", "gridcell", "menuitemcheckbox",
@@ -819,6 +822,7 @@ async function clickElement(params) {
 
   // Visual animated cursor glide to target without blocking CDP execution
   updateCursor(tabId, x, y, { animate: true }).catch(() => {});
+  chrome.tabs.sendMessage(tabId, { type: "CURSOR_CLICK", x, y, dblClick: Boolean(params.dblClick) }).catch(() => {});
 
   // Hardware mouse click via CDP
   await cdpSend(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
@@ -884,41 +888,46 @@ async function dragElement(params) {
 async function typeText(params) {
   const tabId = parseInt(params.tabId, 10);
   await ensureDebugger(tabId);
+  chrome.tabs.sendMessage(tabId, { type: "CURSOR_MODE", mode: "typing" }).catch(() => {});
 
-  if (params.uid) {
-    const snap = tabSnapshots.get(tabId);
-    const elem = snap?.elementMap.get(params.uid);
-    if (elem?.backendDOMNodeId) {
-      try {
-        await cdpSend(tabId, "DOM.focus", { backendNodeId: elem.backendDOMNodeId });
-      } catch (e) {}
+  try {
+    if (params.uid) {
+      const snap = tabSnapshots.get(tabId);
+      const elem = snap?.elementMap.get(params.uid);
+      if (elem?.backendDOMNodeId) {
+        try {
+          await cdpSend(tabId, "DOM.focus", { backendNodeId: elem.backendDOMNodeId });
+        } catch (e) {}
+      }
+      await clickElement(params);
+    } else if (params.x !== undefined && params.y !== undefined) {
+      await clickElement(params);
     }
-    await clickElement(params);
-  } else if (params.x !== undefined && params.y !== undefined) {
-    await clickElement(params);
+
+    const text = params.text || "";
+
+    if (params.clear) {
+      // Ctrl+A / Cmd+A
+      await cdpSend(tabId, "Input.dispatchKeyEvent", { type: "keyDown", windowsVirtualKeyCode: 65, modifiers: 2 });
+      await cdpSend(tabId, "Input.dispatchKeyEvent", { type: "keyUp", windowsVirtualKeyCode: 65, modifiers: 2 });
+      // Backspace
+      await cdpSend(tabId, "Input.dispatchKeyEvent", { type: "keyDown", windowsVirtualKeyCode: 8 });
+      await cdpSend(tabId, "Input.dispatchKeyEvent", { type: "keyUp", windowsVirtualKeyCode: 8 });
+    }
+
+    // Fast atomic insertion via CDP Input.insertText
+    if (text) {
+      await cdpSend(tabId, "Input.insertText", { text });
+    }
+
+    if (params.pressEnter || params.enter) {
+      await pressKey({ tabId, key: "Enter" });
+    }
+
+    return { success: true, tabId, typedLength: text.length };
+  } finally {
+    chrome.tabs.sendMessage(tabId, { type: "CURSOR_MODE", mode: "idle" }).catch(() => {});
   }
-
-  const text = params.text || "";
-
-  if (params.clear) {
-    // Ctrl+A / Cmd+A
-    await cdpSend(tabId, "Input.dispatchKeyEvent", { type: "keyDown", windowsVirtualKeyCode: 65, modifiers: 2 });
-    await cdpSend(tabId, "Input.dispatchKeyEvent", { type: "keyUp", windowsVirtualKeyCode: 65, modifiers: 2 });
-    // Backspace
-    await cdpSend(tabId, "Input.dispatchKeyEvent", { type: "keyDown", windowsVirtualKeyCode: 8 });
-    await cdpSend(tabId, "Input.dispatchKeyEvent", { type: "keyUp", windowsVirtualKeyCode: 8 });
-  }
-
-  // Fast atomic insertion via CDP Input.insertText
-  if (text) {
-    await cdpSend(tabId, "Input.insertText", { text });
-  }
-
-  if (params.pressEnter || params.enter) {
-    await pressKey({ tabId, key: "Enter" });
-  }
-
-  return { success: true, tabId, typedLength: text.length };
 }
 
 async function pressKey(params) {
@@ -1042,21 +1051,26 @@ async function captureScreenshot(params) {
 async function evaluateScript(params) {
   const tabId = parseInt(params.tabId, 10);
   await ensureDebugger(tabId);
+  chrome.tabs.sendMessage(tabId, { type: "CURSOR_MODE", mode: "thinking" }).catch(() => {});
 
-  const res = await cdpSend(tabId, "Runtime.evaluate", {
-    expression: params.expression,
-    returnByValue: true,
-    awaitPromise: true
-  });
+  try {
+    const res = await cdpSend(tabId, "Runtime.evaluate", {
+      expression: params.expression,
+      returnByValue: true,
+      awaitPromise: true
+    });
 
-  if (res.exceptionDetails) {
-    throw new Error(res.exceptionDetails.text || "Script evaluation error");
+    if (res.exceptionDetails) {
+      throw new Error(res.exceptionDetails.text || "Script evaluation error");
+    }
+
+    return {
+      tabId,
+      value: res.result ? res.result.value : undefined
+    };
+  } finally {
+    chrome.tabs.sendMessage(tabId, { type: "CURSOR_MODE", mode: "idle" }).catch(() => {});
   }
-
-  return {
-    tabId,
-    value: res.result ? res.result.value : undefined
-  };
 }
 
 // 10. Semantic Locators, Bulk Paste, and Compound Batch Execution

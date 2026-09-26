@@ -1,3 +1,479 @@
-var codex=(function(){var jn=-44,et=.9,tt=2.2,nt=.12,ot=.7,ge={arcFlow:.5783555327868779,arcSize:.2765523188064277,boundsMargin:20,candidateCount:20,clickAngleDegrees:-44,endpointHandle:.15,startHandle:.41960295031576633};function rt({bounds:e,end:t,start:n}){return lt(st({bounds:e,config:ge,end:t,start:n}),e,ge)}function me(e,t){const n=m(t,0,1),o=n===1?e.segments.length-1:n*e.segments.length,r=Math.floor(o),i=e.segments[r];if(i==null)throw new Error("Cursor motion path has no segment for progress");const c=e.segments[r-1],a=r===0?e.start:c?.end;if(a==null)throw new Error("Cursor motion path segment is missing its start point");const s=n===1?1:o-r;return{point:gt(a,i,s),tangent:mt(a,i,s)}}function pe(e){if(E({x:0,y:0},e)<.001)return Ee(-44);const t=k(e);return Ee(Math.atan2(t.y,t.x)*(180/Math.PI)+90)}function E(e,t){const n=t.x-e.x,o=t.y-e.y;return Math.sqrt(n*n+o*o)}function it(e){return{dampingFraction:et,response:dt(e)}}function m(e,t,n){return Math.max(t,Math.min(n,e))}function st({bounds:e,config:t,end:n,start:o}){const r=ye(t.clickAngleDegrees),i=E(o,n),c={x:n.x-o.x,y:n.y-o.y},a=k(c),s=Math.max(48,Math.min(640,i*t.startHandle,i*.9)),l=Math.max(48,Math.min(640,i*t.endpointHandle,i*.9)),u={x:-r.x,y:-r.y},d=V(e,o,r,s),p=V(e,n,u,l),f={x:-a.y,y:a.x},h=f.x*r.x+f.y*r.y>=0?1:-1,S={x:f.x*h,y:f.y*h},y=pt(o,n),C=V(e,o,r,s*.65),g=V(e,n,u,l*.65),x=k(c),P=Math.max(50,Math.min(520,i*t.arcSize)),A=Math.max(38,Math.min(440,i*t.arcFlow)),L=[.55,.8,1.05],ne=[.65,1,1.35],oe=[he(o,n,d,p),he(o,n,C,g)];for(const re of L)for(const de of ne)at({arcDistanceBase:P,arcDistanceScale:re,arcHandleDistanceBase:A,arcHandleScale:de,arcTangent:x,candidates:oe,end:n,endControl:p,midpoint:y,naturalArcNormal:S,start:o,startControl:d,startControlDistance:s,clickTangent:r});return oe.slice(0,t.candidateCount)}function at({arcDistanceBase:e,arcDistanceScale:t,arcHandleDistanceBase:n,arcHandleScale:o,arcTangent:r,candidates:i,clickTangent:c,end:a,endControl:s,midpoint:l,naturalArcNormal:u,start:d,startControl:p,startControlDistance:f}){fe({arcDistanceBase:e,arcDistanceScale:t,arcHandleDistanceBase:n,arcHandleScale:o,arcNormal:u,arcTangent:r,candidates:i,clickTangent:c,end:a,endControl:s,midpoint:l,start:d,startControl:p,startControlDistance:f}),fe({arcDistanceBase:e,arcDistanceScale:t,arcHandleDistanceBase:n,arcHandleScale:o,arcNormal:{x:-u.x,y:-u.y},arcTangent:r,candidates:i,clickTangent:c,end:a,endControl:s,midpoint:l,start:d,startControl:p,startControlDistance:f})}function fe({arcDistanceBase:e,arcDistanceScale:t,arcHandleDistanceBase:n,arcHandleScale:o,arcNormal:r,arcTangent:i,candidates:c,clickTangent:a,end:s,endControl:l,midpoint:u,start:d,startControl:p,startControlDistance:f}){const h=e*t,S=n*o,y={x:u.x+r.x*h+a.x*f*.16,y:u.y+r.y*h+a.y*f*.16},C={x:y.x-i.x*S,y:y.y-i.y*S},g={x:y.x+i.x*S,y:y.y+i.y*S};c.push(ct({arc:y,arcIn:C,arcOut:g,end:s,endControl:l,start:d,startControl:p}))}function he(e,t,n,o){return{arc:null,arcIn:null,arcOut:null,end:t,endControl:o,segments:[{control1:n,control2:o,end:t}],start:e,startControl:n}}function ct({arc:e,arcIn:t,arcOut:n,end:o,endControl:r,start:i,startControl:c}){return{arc:e,arcIn:t,arcOut:n,end:o,endControl:r,segments:[{control1:c,control2:t,end:e},{control1:n,control2:r,end:o}],start:i,startControl:c}}function lt(e,t,n){const o=e[0];if(o==null)throw new Error("Cursor motion requires at least one candidate");let r=o,i=Number.POSITIVE_INFINITY,c=o,a=Number.POSITIVE_INFINITY;for(const s of e){const l=ve(s,t,n),u=ut(s,l);u<a&&(c=s,a=u),l.staysInBounds&&u<i&&(r=s,i=u)}return i===Number.POSITIVE_INFINITY?c:r}function ve(e,t,n){let o=0,r=0,i=0,c=0,a=null,s=t==null||n==null?!0:xe(e.start,t,n.boundsMargin),l=e.start,u=e.start;for(const d of e.segments){for(let p=1;p<=24;p+=1){const f=p/24,h=Ce(l,d.control1,d.control2,d.end,f);o+=E(u,h),t!=null&&n!=null&&(s=s&&xe(h,t,n.boundsMargin));const S={x:h.x-u.x,y:h.y-u.y};if(E({x:0,y:0},S)>.01){const y=Math.atan2(S.y,S.x);if(a!=null){const C=ft(a,y);r+=C*C,i=Math.max(i,Math.abs(C)),c+=Math.abs(C)}a=y}u=h}l=d.end}return{angleChangeEnergy:r,length:o,maxAngleChange:i,staysInBounds:s,totalTurn:c}}function ut(e,t){const n=Math.max(1,E(e.start,e.end)),o=Math.max(0,t.length/n-1),r=e.arc==null?0:45,i=Se(e);return t.length+o*320+t.angleChangeEnergy*140+t.maxAngleChange*180+t.totalTurn*18+i*90+r}function Se(e){const t=ye(-44),n=k({x:e.end.x-e.start.x,y:e.end.y-e.start.y});return m((-(n.x*t.x+n.y*t.y)-.08)/.92,0,1)}function dt(e){const t=ve(e),n=Math.max(1,E(e.start,e.end)),o=Math.max(0,t.length/n-1),r=m((t.length-180)/760,0,1),i=m(o/.55,0,1),c=m(t.totalTurn/(Math.PI*1.4),0,1),a=m(t.angleChangeEnergy/1.25,0,1),s=m(i*.42+c*.38+a*.2,0,1),l=Se(e),u=e.arc==null?0:.04,d=l*.28,p=e.arc==null?1:.9;return m((.42+r*.22+s*.12+d+u)*ot*p,nt,tt)}function V(e,t,n,o){let r=o;return n.x<0&&(r=Math.min(r,t.x/-n.x)),n.x>0&&(r=Math.min(r,(e.width-t.x)/n.x)),n.y<0&&(r=Math.min(r,t.y/-n.y)),n.y>0&&(r=Math.min(r,(e.height-t.y)/n.y)),{x:t.x+n.x*Math.max(0,r),y:t.y+n.y*Math.max(0,r)}}function ye(e){const t=e*(Math.PI/180);return{x:Math.sin(t),y:-Math.cos(t)}}function gt(e,t,n){return Ce(e,t.control1,t.control2,t.end,n)}function Ce(e,t,n,o,r){const i=1-r,c=i*i*i,a=3*i*i*r,s=3*i*r*r,l=r*r*r;return{x:e.x*c+t.x*a+n.x*s+o.x*l,y:e.y*c+t.y*a+n.y*s+o.y*l}}function mt(e,t,n){const o=1-n;return{x:3*o*o*(t.control1.x-e.x)+6*o*n*(t.control2.x-t.control1.x)+3*n*n*(t.end.x-t.control2.x),y:3*o*o*(t.control1.y-e.y)+6*o*n*(t.control2.y-t.control1.y)+3*n*n*(t.end.y-t.control2.y)}}function pt(e,t){return{x:(e.x+t.x)/2,y:(e.y+t.y)/2}}function k(e){const t=Math.sqrt(e.x*e.x+e.y*e.y);return t<.001?{x:1,y:0}:{x:e.x/t,y:e.y/t}}function xe(e,t,n){return e.x>=n&&e.x<=t.width-n&&e.y>=n&&e.y<=t.height-n}function ft(e,t){let n=t-e;for(;n>Math.PI;)n-=Math.PI*2;for(;n<-Math.PI;)n+=Math.PI*2;return n}function Ee(e){const t=e%360;return t<0?t+360:t}var ht=(function(e){return e.Default="",e.DisabledForLocalTesting="disabled-for-local-testing",e.GaasBrowserEnvironment="gaas-browser-environment",e})({}),zn=ht.Default,$={distribution:"chrome-web-store",extensionIds:["lfkehkpjohcoelkpembgemeipeppanef"],outputModes:[],releaseChannel:"beta",signingIdentity:null,storeUrl:"https://chromewebstore.google.com/detail/codex/lfkehkpjohcoelkpembgemeipeppanef"},Re={distribution:"chrome-web-store",extensionIds:["hehggadaopoacecdllhhajmbjkdcmajg"],outputModes:[],releaseChannel:"stable",signingIdentity:null,storeUrl:"https://chromewebstore.google.com/detail/chatgpt/hehggadaopoacecdllhhajmbjkdcmajg"},Ie={distribution:"microsoft-edge-add-ons",extensionIds:["odlomjlbamekndcpllcnffbgeohgkmjh"],outputModes:[],releaseChannel:"stable",signingIdentity:null,storeUrl:"https://microsoftedge.microsoft.com/addons/detail/odlomjlbamekndcpllcnffbgeohgkmjh"},T={chrome:{dev:[{distribution:"local-development",extensionIds:[],outputModes:["file"],releaseChannel:"dev",signingIdentity:"development"},{distribution:"managed-self-hosted",extensionIds:[],outputModes:["file"],releaseChannel:"dev",signingIdentity:"development"},$],internal:[{distribution:"managed-self-hosted",extensionIds:[],outputModes:["file","blobstore"],releaseChannel:"beta",signingIdentity:"beta"},$],prod:[{distribution:"managed-self-hosted",extensionIds:[],outputModes:["file"],releaseChannel:"stable",signingIdentity:"stable"},Re]},edge:{dev:[{distribution:"local-development",extensionIds:[],outputModes:["file"],releaseChannel:"dev",signingIdentity:"development"},{distribution:"managed-self-hosted",extensionIds:[],outputModes:["file"],releaseChannel:"dev",signingIdentity:"development"},$],internal:[{distribution:"managed-self-hosted",extensionIds:[],outputModes:["file","blobstore"],releaseChannel:"beta",signingIdentity:"beta"},Ie,$],prod:[{distribution:"managed-self-hosted",extensionIds:[],outputModes:["file"],releaseChannel:"stable",signingIdentity:"stable"},Ie,Re]}},Y={dev:{distributions:T.chrome.dev},internal:{distributions:T.chrome.internal},prod:{distributions:T.chrome.prod}},Zn={chrome:{backendCompatibilityKey:"chrome",displayName:"Google Chrome",browserIconAssetPath:"assets/google-chrome.png",shortDisplayName:"Chrome",userAgentIdentifiers:["Chrome/"],internalUrlSchemes:["chrome"],extensionManagementUrl:"chrome://extensions",extensionChannels:Y,linux:{installations:[{commands:["google-chrome","google-chrome-stable"],userDataDirName:"google-chrome"},{commands:["chromium","chromium-browser"],userDataDirName:"chromium"},{commands:["google-chrome-beta"],userDataDirName:"google-chrome-beta"},{commands:["google-chrome-unstable"],userDataDirName:"google-chrome-unstable"},{commands:["google-chrome-for-testing"],userDataDirName:"google-chrome-for-testing"}],nativeMessagingManifestDirectories:[".config/google-chrome/NativeMessagingHosts",".config/chromium/NativeMessagingHosts",".config/google-chrome-beta/NativeMessagingHosts",".config/google-chrome-unstable/NativeMessagingHosts",".config/google-chrome-for-testing/NativeMessagingHosts"],processNames:["chrome"],userDataDirectorySegments:[".config","google-chrome"]},macos:{applicationNames:["Google Chrome.app"],bundleId:"com.google.Chrome",nativeMessagingManifestDirectories:["Library/Application Support/Google/Chrome/NativeMessagingHosts","Library/Application Support/Chromium/NativeMessagingHosts","Library/Application Support/Google/ChromeForTesting/NativeMessagingHosts","Library/Application Support/Google/Chrome for Testing/NativeMessagingHosts"],processNames:["Google Chrome","Google Chrome Helper"],userDataDirectorySegments:["Library","Application Support","Google","Chrome"]},windows:{commandNames:["chrome.exe","chrome"],httpsUserChoiceProgIdPrefixes:["chromehtml"],installPathSegments:["Google","Chrome","Application","chrome.exe"],processNames:["chrome.exe"],userDataDirectorySegments:["Google","Chrome","User Data"]}},edge:{backendCompatibilityKey:"chrome",displayName:"Microsoft Edge",browserIconAssetPath:"assets/microsoft-edge.svg",shortDisplayName:"Edge",userAgentIdentifiers:["Edg/"],internalUrlSchemes:["edge"],extensionManagementUrl:"edge://extensions",extensionChannels:{dev:{distributions:T.edge.dev},internal:{distributions:T.edge.internal},prod:{distributions:T.edge.prod}},linux:{installations:[{commands:["microsoft-edge","microsoft-edge-stable"],userDataDirName:"microsoft-edge"}],nativeMessagingManifestDirectories:[".config/microsoft-edge/NativeMessagingHosts"],processNames:["msedge"],userDataDirectorySegments:[".config","microsoft-edge"]},macos:{applicationNames:["Microsoft Edge.app"],bundleId:"com.microsoft.edgemac",nativeMessagingManifestDirectories:["Library/Application Support/Microsoft Edge/NativeMessagingHosts"],processNames:["Microsoft Edge","Microsoft Edge Helper"],userDataDirectorySegments:["Library","Application Support","Microsoft Edge"]},windows:{commandNames:["msedge.exe","msedge"],httpsUserChoiceProgIdPrefixes:["msedgehtm"],installPathSegments:["Microsoft","Edge","Application","msedge.exe"],processNames:["msedge.exe"],userDataDirectorySegments:["Microsoft","Edge","User Data"]}},brave:{backendCompatibilityKey:"chrome",displayName:"Brave Browser",browserIconAssetPath:"assets/brave.svg",shortDisplayName:"Brave Browser",userAgentIdentifiers:["Brave/"],internalUrlSchemes:["brave","chrome"],extensionManagementUrl:"brave://extensions",extensionChannels:Y,linux:{installations:[{commands:["brave-browser","brave-browser-stable","brave"],userDataDirName:"BraveSoftware/Brave-Browser"}],nativeMessagingManifestDirectories:[".config/BraveSoftware/Brave-Browser/NativeMessagingHosts"],processNames:["brave","brave-browser"],userDataDirectorySegments:[".config","BraveSoftware","Brave-Browser"]},macos:{applicationNames:["Brave Browser.app"],bundleId:"com.brave.Browser",nativeMessagingManifestDirectories:["Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts"],processNames:["Brave Browser","Brave Browser Helper"],userDataDirectorySegments:["Library","Application Support","BraveSoftware","Brave-Browser"]},windows:{commandNames:["brave.exe","brave","brave-browser"],httpsUserChoiceProgIdPrefixes:["bravehtml"],installPathSegments:["BraveSoftware","Brave-Browser","Application","brave.exe"],processNames:["brave.exe"],userDataDirectorySegments:["BraveSoftware","Brave-Browser","User Data"]}},opera:{backendCompatibilityKey:"chrome",displayName:"Opera",browserIconAssetPath:"assets/opera.svg",shortDisplayName:"Opera",userAgentIdentifiers:["OPR/","Opera/"],internalUrlSchemes:["opera","chrome"],extensionManagementUrl:"opera://extensions",extensionChannels:Y,linux:{installations:[{commands:["opera","opera-stable"],userDataDirName:"opera"}],nativeMessagingManifestDirectories:[".config/opera/NativeMessagingHosts"],processNames:["opera"],userDataDirectorySegments:[".config","opera"]},macos:{applicationNames:["Opera.app"],bundleId:"com.operasoftware.Opera",nativeMessagingManifestDirectories:["Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts"],processNames:["Opera","Opera Helper"],userDataDirectorySegments:["Library","Application Support","com.operasoftware.Opera"]},windows:{commandNames:["opera.exe","opera"],httpsUserChoiceProgIdPrefixes:["operastable"],installPathSegments:["Opera","opera.exe"],processNames:["opera.exe"],userDataDirectorySegments:["Opera Software","Opera Stable"]}},vivaldi:{backendCompatibilityKey:"chrome",displayName:"Vivaldi",browserIconAssetPath:"assets/vivaldi.svg",shortDisplayName:"Vivaldi",userAgentIdentifiers:["Vivaldi/"],internalUrlSchemes:["vivaldi","chrome"],extensionManagementUrl:"vivaldi://extensions",extensionChannels:Y,linux:{installations:[{commands:["vivaldi","vivaldi-stable"],userDataDirName:"vivaldi"}],nativeMessagingManifestDirectories:[".config/vivaldi/NativeMessagingHosts"],processNames:["vivaldi","vivaldi-bin"],userDataDirectorySegments:[".config","vivaldi"]},macos:{applicationNames:["Vivaldi.app"],bundleId:"com.vivaldi.Vivaldi",nativeMessagingManifestDirectories:["Library/Application Support/Vivaldi/NativeMessagingHosts"],processNames:["Vivaldi","Vivaldi Helper"],userDataDirectorySegments:["Library","Application Support","Vivaldi"]},windows:{commandNames:["vivaldi.exe","vivaldi"],httpsUserChoiceProgIdPrefixes:["vivaldihtm"],installPathSegments:["Vivaldi","Application","vivaldi.exe"],processNames:["vivaldi.exe"],userDataDirectorySegments:["Vivaldi","User Data"]}}},Oe="codex-agent-overlay-root",_e="codex-favicon-badge",Ae={cursor:null,isVisible:!1,sessionId:null,turnId:null};function W(e){if(e==null||!e.startsWith("data:image/svg+xml,"))return!1;try{return decodeURIComponent(e.slice(19)).includes(`data-codex-favicon-badge="${_e}"`)}catch{return!1}}var Me='link[data-codex-favicon-badge="true"]',vt='link[rel~="icon"], link[rel="shortcut icon"]',be="codexFaviconBadgeCreated",Te="codexOriginalFaviconHref",Ne="apple-touch-icon",St="black",yt="#22c55e",Ct="#facc15",xt="M3.04536 4.45259C2.7582 3.60299 3.60299 2.7582 4.45259 3.04536L14.1828 6.33403C15.1637 6.66558 15.0872 8.08006 14.0715 8.39045L10.2994 9.54319C9.93919 9.65327 9.65327 9.93919 9.54319 10.2994L8.39046 14.0715C8.08007 15.0872 6.66558 15.1637 6.33404 14.1828L3.04536 4.45259Z",q=[],B=[];function Et(e,t){if(e==null||t==null)return Rt();De(),we(),q=It(Nt(e,t));for(const n of q)Ot(n);return Promise.resolve()}function Rt(){if(B.length===0){for(const e of document.querySelectorAll(Me))W(e.getAttribute("href"))&&(B.push([e,e.rel]),e.rel=Ne);we()}return new Promise(e=>{setTimeout(()=>{De(),e()},0)})}function we(){_t(),Mt()}function It(e){const t=[...document.querySelectorAll(vt)];if(t.length>0)return t.map(o=>({badgedHref:e,createdByCodex:!1,originalHref:o.getAttribute("href"),link:o}));const n=document.createElement("link");return n.rel="icon",Tt().appendChild(n),[{badgedHref:e,createdByCodex:!0,originalHref:null,link:n}]}function Ot({badgedHref:e,createdByCodex:t,originalHref:n,link:o}){o.href=e,o.dataset.codexFaviconBadge="true",bt(o,t,n)}function _t(){const e=q;q=[];for(const t of e)At(t)}function At({badgedHref:e,createdByCodex:t,originalHref:n,link:o}){const r=o.getAttribute("href"),i=r===e||W(r);ie(o),i&&Pe(o,t,n)}function Mt(){for(const e of document.querySelectorAll(Me)){if(!W(e.getAttribute("href"))){ie(e);continue}const t=e.dataset[be]==="true",n=e.dataset[Te]??null;ie(e),Pe(e,t,n)}}function De(){const e=B;B=[];for(const[t,n]of e)W(t.getAttribute("href"))?t.remove():t.rel===Ne&&(t.rel=n)}function bt(e,t,n){t?e.dataset[be]="true":delete e.dataset.codexFaviconBadgeCreated,n==null?delete e.dataset.codexOriginalFaviconHref:e.dataset[Te]=n}function Pe(e,t,n){if(t){B.some(([o])=>o===e)||e.remove();return}n==null?e.removeAttribute("href"):e.href=n}function Tt(){if(document.head)return document.head;const e=document.createElement("head");return document.documentElement.prepend(e),e}function Nt(e,t){const n=e==="active"?' opacity="0.3"':"",o=`<svg xmlns="http://www.w3.org/2000/svg" data-codex-favicon-badge="${_e}" width="32" height="32" viewBox="0 0 32 32">${`<image href="${Dt(t)}" width="32" height="32"${n} />`}${wt(e)}</svg>`;return`data:image/svg+xml,${encodeURIComponent(o)}`}function wt(e){switch(e){case"active":return`<path d="${xt}" fill="${St}" stroke="white" stroke-width="1.5" stroke-linejoin="round" paint-order="stroke fill" transform="translate(-2 -2) scale(2.1)" />`;case"deliverable":return`<circle cx="24" cy="24" r="7" fill="${yt}" />`;case"handoff":return`<circle cx="24" cy="24" r="7" fill="${Ct}" />`}}function Dt(e){return e.replaceAll("&","&amp;").replaceAll('"',"&quot;").replaceAll("<","&lt;").replaceAll(">","&gt;")}function ie(e){delete e.dataset.codexFaviconBadge,delete e.dataset.codexFaviconBadgeCreated,delete e.dataset.codexOriginalFaviconHref}var se=24,X=se/2,Pt=23,Lt=24,Bt=12,Ut=-2.5,Ft=44,ae="--browser-agent-cursor-glow-color",Gt=`drop-shadow(0 0 6px color-mix(in srgb, var(${ae}) 90%, transparent)) drop-shadow(0 0 15px color-mix(in srgb, var(${ae}) 48%, transparent))`,Ht=5,Vt=.4,kt=0,$t=1.41,Yt=.66,Wt=12.5,qt=.58,Xt=.55,K=1/60,Kt=.85,Le=12,jt=196,zt=70,Zt=.15,Be=0,j=1/240,Jt=1,Ue=.001*60,Qt={dampingFraction:.85,response:.2},en={dampingFraction:.86,response:.42},tn={dampingFraction:.94,response:.19},z={dampingFraction:.9,response:.19},Fe={dampingFraction:.9,response:.12},nn={dampingFraction:.82,response:.055},on={dampingFraction:.86,response:.12};function rn(e,{assetUrl:t,dataTestId:n="browser-agent-cursor",glowColor:o,onArrived:r}){const i=sn(e,t,n,o);let c=null,a=U(),s=null,l=null,u=null,d=null,p=null,f=null,h=!1,S=!1;const y=()=>{u==null||l==null||p===l||(p=l,r?.(u))},C=()=>{c!=null||s==null||S||(c=Mn(g=>{c=null;const x=s;if(x==null)return;const P=h?K:Math.max(K,(g-a)/1e3);h=!1,a=g;const A=mn(x,P,g);Z(i,x),A&&y(),vn(x)&&C()}))};return{destroy:()=>{S=!0,c!=null&&(bn(c),c=null),i.layer.remove()},setState:g=>{const x=g.turnKey??"",P=g.cursor!=null,A=Cn({cursorX:g.cursor?.x,cursorY:g.cursor?.y,viewportHeight:g.viewportSize.height,viewportWidth:g.viewportSize.width}),L=g.isVisible!==!1&&g.cursor?.visible!==!1,ne=g.cursor?.animateMovement!==!1,oe=L&&!P;if(u=g.cursor?.moveSequence??null,l=u==null?null:`${x}:${u}`,s==null&&(s=an(A,L)),s.visibilitySpring.target=L?1:0,oe&&d!==x&&(d=x,v(s.visibilitySpring,1),s.thinkStartedAt=U()),!P){ke(s,A),Z(i,s),C();return}const re=g.cursor?.moveSequence!=null&&L&&s.visibilitySpring.value<=.001&&f!==x;s.thinkStartedAt=null;const de=E(s.point,A);if(!ne||re||de<.5){re&&(f=x,v(s.visibilitySpring,1)),ke(s,A),ne||(s.stretchSpring.force=0,s.stretchSpring.value=1,s.stretchSpring.velocity=0),Z(i,s),y(),C();return}cn(s,A,g.viewportSize),h=!0,Z(i,s),C()}}}function sn(e,t,n,o){const r=document.createElement("div");r.setAttribute("aria-hidden","true"),r.style.inset="0",r.style.overflow="hidden",r.style.pointerEvents="none",r.style.position="absolute",r.style.zIndex="20";const i=document.createElement("div");i.dataset.testid=n,i.style.height=`${se}px`,i.style.left="0",i.style.position="absolute",i.style.top="0",i.style.transformOrigin=`${X}px ${X}px`,i.style.willChange="transform",i.style.width=`${se}px`;const c=document.createElement("div");c.style.transform=`translate3d(${Bt}px, ${Ut}px, 0)`;const a=document.createElement("img");return a.alt="",a.dataset.browserAgentCursorAsset="",a.dataset.testid=`${n}-asset`,a.draggable=!1,a.height=Lt,a.src=t,a.style.display="block",a.style.setProperty(ae,o),a.style.filter=Gt,a.style.transform=`rotate(${Ft}deg) scale(1)`,a.style.transformOrigin="0 0",a.width=Pt,c.appendChild(a),i.appendChild(c),r.appendChild(i),e.appendChild(r),{cursor:i,layer:r}}function an(e,t){const n=t?1:0,o=w(-44);return{motion:null,point:e,positionXSpring:R(e.x,e.x,z),positionYSpring:R(e.y,e.y,z),rotation:o,rotationSpring:R(o,o,Fe),scootAxisRotation:0,scootAxisSpring:R(0,0,Fe),scootRotationSpring:R(0,0,nn),scootStretchSpring:R(1,1,on),stretchSpring:R(1,1,Qt),thinkStartedAt:null,visibilitySpring:R(n,n,en)}}function cn(e,t,n){e.thinkStartedAt=null;const o={x:e.point.x,y:e.point.y};if(E(o,t)<=jt){ln(e,o,t);return}const r=rt({bounds:n,end:t,start:o}),i=it(r);Ge(e,In(i.response),i.dampingFraction),e.motion={mode:"bezier",path:r,progressSpring:R(0,1,i)}}function ln(e,t,n){const o=un(t,n);Ge(e,z.response,z.dampingFraction),e.positionXSpring.target=n.x,e.positionYSpring.target=n.y,N(e.rotationSpring,w(-44)),N(e.scootAxisSpring,o.axisRotation),e.motion={axisRotation:o.axisRotation,end:n,mode:"scoot",progressSpring:R(0,1,tn),rotationTarget:o.rotationTarget,start:t}}function un(e,t){const n=_n({x:t.x-e.x,y:t.y-e.y});return{axisRotation:dn(n),rotationTarget:gn(n)}}function dn(e){return E({x:0,y:0},e)<.001?0:Math.atan2(e.y,e.x)*(180/Math.PI)}function gn(e){return m(e.x*.75+-e.y*.62,-1,1)*zt}function mn(e,t,n){const o=pn(e,t,n);return I(e.visibilitySpring,t),I(e.stretchSpring,t),I(e.scootStretchSpring,t),I(e.scootRotationSpring,t),o}function pn(e,t,n){if(e.motion==null)return e.stretchSpring.target=1,e.scootStretchSpring.target=1,e.scootRotationSpring.target=0,!1;const o=Math.max(0,t);return e.thinkStartedAt=null,e.motion.mode==="scoot"?hn(e,o,n):fn(e,o,n)}function fn(e,t,n){const o=e.motion;if(o?.mode!=="bezier")return!1;e.scootStretchSpring.target=1,e.scootRotationSpring.target=0,I(o.progressSpring,t);const r=m(o.progressSpring.value,0,1),i=me(o.path,r),c=pe(i.tangent);e.positionXSpring.target=i.point.x,e.positionYSpring.target=i.point.y,N(e.rotationSpring,c),N(e.scootAxisSpring,0);const a=He(e,t);if(e.stretchSpring.target=En(a.speed),r>=.999&&Math.abs(o.progressSpring.velocity)<.01&&Ve(e,i.point)){const s=me(o.path,1),l=pe(s.tangent);return ce(e,s.point),v(e.rotationSpring,l),e.rotation=l,v(e.scootAxisSpring,0),e.scootAxisRotation=0,v(e.stretchSpring,1),e.motion=null,e.thinkStartedAt=n,!0}return!1}function hn(e,t,n){const o=e.motion;if(o?.mode!=="scoot")return!1;I(o.progressSpring,t),e.positionXSpring.target=o.end.x,e.positionYSpring.target=o.end.y,N(e.scootAxisSpring,o.axisRotation),N(e.rotationSpring,w(-44));const r=On(He(e,t).point,o.start,o.end),i=Math.sin(Math.min(1,r)*Math.PI);return e.stretchSpring.target=1,e.scootStretchSpring.target=Rn(r),e.scootRotationSpring.target=o.rotationTarget*i,r>=.999&&Math.abs(o.progressSpring.velocity)<.01&&Ve(e,o.end)?(ce(e,o.end),v(e.rotationSpring,w(-44)),e.rotation=e.rotationSpring.value,$e(e),v(e.stretchSpring,1),e.motion=null,e.thinkStartedAt=n,!0):!1}function vn(e){return e.motion!=null||e.thinkStartedAt!=null||!M(e.positionXSpring)||!M(e.positionYSpring)||!M(e.rotationSpring)||!M(e.scootAxisSpring)||!M(e.scootRotationSpring)||!M(e.scootStretchSpring)||!M(e.stretchSpring)||!M(e.visibilitySpring)}function M(e){return e.value===e.target&&We(e)}function Z(e,t){const n=xn(t,U());Sn(e.cursor,{point:t.point,rotation:n,scootAxisRotation:t.scootAxisRotation,scootRotation:t.scootRotationSpring.value,scootStretch:t.scootStretchSpring.value,stretch:t.stretchSpring.value,visibility:t.visibilitySpring.value})}function Sn(e,t){const n=yn(t);e.style.transform=n.transform,e.style.opacity=`${n.opacity}`,e.style.filter=n.filter}function yn({point:e,rotation:t,scootAxisRotation:n,scootRotation:o,scootStretch:r,stretch:i,visibility:c}){const a=m(c,0,1),s=J(Vt,1,a),l=J(Ht,0,a),u=m(r,Be,1),d=[`translate3d(${O(e.x-X)}px, ${O(e.y-X)}px, 0)`];return(Math.abs(Ye(0,n))>.001||Math.abs(u-1)>.001)&&d.push(`rotate(${O(n)}deg)`,`scale(1, ${O(u)})`,`rotate(${O(-n)}deg)`),d.push(`rotate(${O(w(t+o))}deg)`,`scale(${O(i*s)}, ${O(s)})`),{filter:`blur(${O(l)}px)`,opacity:O(a),transform:d.join(" ")}}function Cn({cursorX:e,cursorY:t,viewportHeight:n,viewportWidth:o}){return{x:m(e??Math.round(o*qt),0,o),y:m(t??Math.round(n*Xt),0,n)}}function xn(e,t){if(e.thinkStartedAt==null)return e.rotation;const n=(t-e.thinkStartedAt)/1e3-kt;if(n<0)return e.rotation;const o=Math.min(1,n/$t),r=Math.sin(o*Math.PI),i=Math.sin(n/Yt*Math.PI*2)*r;return o>=1?(e.thinkStartedAt=null,e.rotation):e.rotation+i*Wt}function En(e){return m(1-e/5500,.65,1)}function Rn(e){return J(1,J(1,Be,Math.sin(m(e,0,1)*Math.PI)),Zt)}function In(e){return m(e*.18,.035,.12)}function Ge(e,t,n){e.positionXSpring.response=t,e.positionYSpring.response=t,e.positionXSpring.dampingFraction=n,e.positionYSpring.dampingFraction=n}function He(e,t){const n=e.point;I(e.positionXSpring,t),I(e.positionYSpring,t),I(e.rotationSpring,t),I(e.scootAxisSpring,t);const o={x:e.positionXSpring.value,y:e.positionYSpring.value},r=E(n,o)/Math.max(t,1/240);return e.point=o,e.rotation=e.rotationSpring.value,e.scootAxisRotation=e.scootAxisSpring.value,{point:o,speed:r}}function Ve(e,t){return E(e.point,t)<=Kt&&Math.abs(e.positionXSpring.velocity)<=Le&&Math.abs(e.positionYSpring.velocity)<=Le}function ce(e,t){e.point=t,v(e.positionXSpring,t.x),v(e.positionYSpring,t.y)}function ke(e,t){e.motion=null,ce(e,t),v(e.rotationSpring,w(-44)),e.rotation=e.rotationSpring.value,$e(e),v(e.stretchSpring,1)}function $e(e){v(e.scootAxisSpring,0),v(e.scootRotationSpring,0),v(e.scootStretchSpring,1),e.scootAxisRotation=0}function On(e,t,n){const o={x:n.x-t.x,y:n.y-t.y},r=o.x*o.x+o.y*o.y;return r<.001?1:m(((e.x-t.x)*o.x+(e.y-t.y)*o.y)/r,0,1)}function N(e,t){e.target=e.value+Ye(e.value,t)}function Ye(e,t){let n=t-e;for(;n>180;)n-=360;for(;n<-180;)n+=360;return n}function _n(e){const t=Math.sqrt(e.x*e.x+e.y*e.y);return t<.001?{x:1,y:0}:{x:e.x/t,y:e.y/t}}function R(e,t,n){return{dampingFraction:n.dampingFraction,force:0,response:n.response,simulationTime:0,scriptTime:0,target:t,value:e,velocity:0}}function v(e,t){e.force=0,e.simulationTime=0,e.scriptTime=0,e.target=t,e.value=t,e.velocity=0}function I(e,t){const n=Math.max(.001,e.response),o=1/(2*j**2),r=Math.min((Math.PI*2)**2/n**2,o),i=Math.sqrt(r)*2*e.dampingFraction;for(e.scriptTime+=Math.max(0,t),e.scriptTime-e.simulationTime>Jt&&(e.simulationTime=e.scriptTime-K);e.simulationTime<e.scriptTime;)An(e,r,i),e.simulationTime+=j;We(e)&&(e.value=e.target)}function An(e,t,n){const o=j/2,r=e.velocity+e.force*o;e.value+=r*j,e.force=r*-n+(e.target-e.value)*t,e.velocity=r+e.force*o}function We(e){if(Math.max(e.velocity*e.velocity,e.force*e.force)>Ue*Ue)return!1;const t=e.target*.01,n=e.target-e.value;return t===0||n*n<=t*t}function J(e,t,n){return e+(t-e)*n}function w(e){const t=e%360;return t<0?t+360:t}function O(e){return Math.round(e*1e3)/1e3}function U(){return typeof performance>"u"?Date.now():performance.now()}function Mn(e){return typeof window<"u"&&window.requestAnimationFrame!=null?window.requestAnimationFrame(e):typeof window<"u"?window.setTimeout(()=>e(U()),K*1e3):(e(U()),0)}function bn(e){if(typeof window<"u"&&window.cancelAnimationFrame!=null){window.cancelAnimationFrame(e);return}typeof window<"u"&&window.clearTimeout(e)}var Tn=window.top===window.self,Nn="#339cff";function qe(e){if(!e||typeof e!="object")return Ae;const t=e,n=typeof t.sessionId=="string"?t.sessionId:null,o=typeof t.turnId=="string"?t.turnId:null;return{cursor:wn(t.cursor),isVisible:t.isVisible===!0&&n!=null,sessionId:n,turnId:o}}function wn(e){if(!e||typeof e!="object")return null;const t=e;return typeof t.visible!="boolean"||typeof t.x!="number"||typeof t.y!="number"||!Number.isFinite(t.x)||!Number.isFinite(t.y)?null:{...typeof t.animateMovement=="boolean"?{animateMovement:t.animateMovement}:{},...Number.isInteger(t.moveSequence)?{moveSequence:t.moveSequence}:{},visible:t.visible,x:t.x,y:t.y}}function Dn(e){let t=Ae,n=null,o=0;const r=document.createElement("div");r.className="codex-agent-overlay",r.setAttribute("aria-hidden","true"),Tn&&(n=rn(r,{assetUrl:chrome.runtime.getURL("images/cursor.png"),glowColor:Nn,onArrived:l=>{if(t.sessionId==null||t.turnId==null)return;const u={type:"AGENT_CURSOR_ARRIVED",moveSequence:l,sessionId:t.sessionId,turnId:t.turnId};chrome.runtime.sendMessage(u).catch(()=>{})}}));const i=()=>{r.style.display=t.isVisible?"":"none",n?.setState({cursor:t.cursor,isVisible:t.isVisible&&t.sessionId!=null,turnKey:t.sessionId==null?null:`${t.sessionId}:${t.turnId??""}`,viewportSize:Pn()})},c=l=>{t=l,i()},a=(l,u,d)=>l?.type!=="AGENT_CURSOR_STATE"?!1:n==null?(d({ok:!1}),!0):(o+=1,c(qe(l.state)),d({ok:!0}),!0),s=()=>{const l=o+1;o=l,chrome.runtime.sendMessage({type:"GET_AGENT_CURSOR_STATE"}).then(u=>{l!==o||!u?.ok||c(qe(u.state))}).catch(()=>{})};return chrome.runtime.onMessage.addListener(a),window.addEventListener("resize",i),window.visualViewport?.addEventListener("resize",i),window.addEventListener("pageshow",s),e.replaceChildren(r),i(),s(),()=>{o+=1,n?.destroy(),chrome.runtime.onMessage.removeListener(a),window.removeEventListener("resize",i),window.visualViewport?.removeEventListener("resize",i),window.removeEventListener("pageshow",s),e.replaceChildren()}}function Pn(){return{height:window.visualViewport?.height??window.innerHeight,width:window.visualViewport?.width??window.innerWidth}}var Ln=".codex-agent-overlay{all:initial;z-index:2147483646;pointer-events:none;position:fixed;inset:0}@media print{.codex-agent-overlay{display:none}}",Xe=!1,_=null,F=null,D=[],le=null,G=null,Ke="codexAgentOverlayRoot",Bn={childList:!0};function Un(){if(Xe){Q();return}Xe=!0,Q(),chrome.runtime.onMessage.addListener((e,t,n)=>Fn(e)?(n({ok:!0}),!0):Gn(e)?(Et(e.badge,e.faviconDataUrl).then(()=>n({ok:!0})),!0):!1)}function Fn(e){return je(e)&&e.type==="CONTENT_PING"}function Gn(e){if(!je(e)||e.type!=="TAB_FAVICON_BADGE")return!1;const{badge:t}=e;return t==null?e.faviconDataUrl==null:typeof e.faviconDataUrl=="string"&&(t==="active"||t==="deliverable"||t==="handoff")}function je(e){return typeof e=="object"&&e!==null}function Q(){if(_?.isConnected===!0&&document.getElementById("codex-agent-overlay-root")===_){const c=_.parentNode;return c!=null&&b(c),!0}if(_==null&&G!=null&&G===document.documentElement)return!1;ze();const e=document.getElementById(Oe);if(e!=null)if(e instanceof HTMLDivElement)if(e.dataset[Ke]==="true")e.remove();else return e.parentNode!=null&&b(e.parentNode),!1;else return e.parentNode!=null&&b(e.parentNode),!1;const t=document.documentElement;if(!t)return b(document),!1;G=null;const n=document.createElement("div");n.id=Oe,n.dataset[Ke]="true",t.appendChild(n);const o=n.attachShadow({mode:"closed"}),r=document.createElement("style");r.textContent=Ln,o.appendChild(r);const i=document.createElement("div");return o.appendChild(i),le=Dn(i),_=n,b(t),!0}function b(e){const t=e.parentNode==null?[e]:[e,e.parentNode];if(!(t.length===D.length&&t.every((n,o)=>n===D[o]))){F==null?F=new MutationObserver(()=>{if(_?.isConnected===!0){const o=_.parentNode;o!=null&&b(o);return}if(_==null){G!==document.documentElement&&Q();return}const n=D[0];if(n!=null&&!n.isConnected&&n!==document.documentElement){Q();return}G=document.documentElement,ze(),b(document)}):D.length>0&&F.disconnect(),D=t;for(const n of t)F.observe(n,Bn)}}function Hn(){F?.disconnect(),D=[]}function ze(){Hn(),le?.(),_?.remove(),le=null,_=null}function Jn(e){return e}var Vn={cssInjectionMode:"manifest",matchAboutBlank:!0,matches:["<all_urls>"],registration:"runtime",runAt:"document_start",main(){Un()}};function ee(e,...t){}var kn={debug:(...e)=>ee(console.debug,...e),log:(...e)=>ee(console.log,...e),warn:(...e)=>ee(console.warn,...e),error:(...e)=>ee(console.error,...e)},$n=globalThis.browser?.runtime?.id?globalThis.browser:globalThis.chrome,Ze=$n,Je=class Qe extends Event{static EVENT_NAME=ue("wxt:locationchange");constructor(t,n){super(Qe.EVENT_NAME,{}),this.newUrl=t,this.oldUrl=n}};function ue(e){return`${Ze?.runtime?.id}:codex:${e}`}var Yn=typeof globalThis.navigation?.addEventListener=="function";function Wn(e){let t,n=!1;return{run(){n||(n=!0,t=new URL(location.href),Yn?globalThis.navigation.addEventListener("navigate",o=>{const r=new URL(o.destination.url);r.href!==t.href&&(window.dispatchEvent(new Je(r,t)),t=r)},{signal:e.signal}):e.setInterval(()=>{const o=new URL(location.href);o.href!==t.href&&(window.dispatchEvent(new Je(o,t)),t=o)},1e3))}}}var qn=class H{static SCRIPT_STARTED_MESSAGE_TYPE=ue("wxt:content-script-started");id;abortController;locationWatcher=Wn(this);constructor(t,n){this.contentScriptName=t,this.options=n,this.id=Math.random().toString(36).slice(2),this.abortController=new AbortController,this.stopOldScripts(),this.listenForNewerScripts()}get signal(){return this.abortController.signal}abort(t){return this.abortController.abort(t)}get isInvalid(){return Ze.runtime?.id==null&&this.notifyInvalidated(),this.signal.aborted}get isValid(){return!this.isInvalid}onInvalidated(t){return this.signal.addEventListener("abort",t),()=>this.signal.removeEventListener("abort",t)}block(){return new Promise(()=>{})}setInterval(t,n){const o=setInterval(()=>{this.isValid&&t()},n);return this.onInvalidated(()=>clearInterval(o)),o}setTimeout(t,n){const o=setTimeout(()=>{this.isValid&&t()},n);return this.onInvalidated(()=>clearTimeout(o)),o}requestAnimationFrame(t){const n=requestAnimationFrame((...o)=>{this.isValid&&t(...o)});return this.onInvalidated(()=>cancelAnimationFrame(n)),n}requestIdleCallback(t,n){const o=requestIdleCallback((...r)=>{this.signal.aborted||t(...r)},n);return this.onInvalidated(()=>cancelIdleCallback(o)),o}addEventListener(t,n,o,r){n==="wxt:locationchange"&&this.isValid&&this.locationWatcher.run(),t.addEventListener?.(n.startsWith("wxt:")?ue(n):n,o,{...r,signal:this.signal})}notifyInvalidated(){this.abort("Content script context invalidated"),kn.debug(`Content script "${this.contentScriptName}" context invalidated`)}stopOldScripts(){document.dispatchEvent(new CustomEvent(H.SCRIPT_STARTED_MESSAGE_TYPE,{detail:{contentScriptName:this.contentScriptName,messageId:this.id}})),window.postMessage({type:H.SCRIPT_STARTED_MESSAGE_TYPE,contentScriptName:this.contentScriptName,messageId:this.id},"*")}verifyScriptStartedEvent(t){const n=t.detail?.contentScriptName===this.contentScriptName,o=t.detail?.messageId===this.id;return n&&!o}listenForNewerScripts(){const t=n=>{!(n instanceof CustomEvent)||!this.verifyScriptStartedEvent(n)||this.notifyInvalidated()};document.addEventListener(H.SCRIPT_STARTED_MESSAGE_TYPE,t),this.onInvalidated(()=>document.removeEventListener(H.SCRIPT_STARTED_MESSAGE_TYPE,t))}};function Qn(){}function te(e,...t){}var Xn={debug:(...e)=>te(console.debug,...e),log:(...e)=>te(console.log,...e),warn:(...e)=>te(console.warn,...e),error:(...e)=>te(console.error,...e)},Kn=(async()=>{try{const{main:e,...t}=Vn;return await e(new qn("codex",t))}catch(e){throw Xn.error('The content script "codex" crashed on startup!',e),e}})();return Kn})();
+// Antigravity Browser Bridge - Minimalist Modern Studio Cursor (v1.6.0)
+// High-precision vector cursor with Figma/macOS aesthetics, dynamic velocity banking,
+// interactive click ripples, state-aware aura (breathing/thinking), and typing beam mode.
 
-codex;
+(function () {
+  const OVERLAY_ID = "codex-agent-overlay-root"; // Retain id for backward compatibility
+  if (window.__antigravityCursorInitialized) return;
+  window.__antigravityCursorInitialized = true;
+
+  let rootElement = null;
+  let shadowRoot = null;
+  let tracker = null;
+  let pointerWrapper = null;
+  let cursorAura = null;
+  let thinkingSpinner = null;
+  let typingBeam = null;
+  let badgeText = null;
+  let ripplesLayer = null;
+
+  // State
+  let currentX = 350;
+  let currentY = 250;
+  let targetX = 350;
+  let targetY = 250;
+  let isVisible = true;
+  let currentMode = "idle"; // "idle" | "thinking" | "typing"
+  let currentTilt = 0;
+  let currentStretch = 1;
+  let currentSqueeze = 1;
+  let animFrameId = null;
+
+  const CSS_STYLES = `
+    :host {
+      all: initial !important;
+    }
+    .overlay-viewport {
+      position: fixed !important;
+      inset: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      pointer-events: none !important;
+      z-index: 2147483647 !important;
+      overflow: hidden !important;
+      user-select: none !important;
+    }
+    @media print {
+      .overlay-viewport { display: none !important; }
+    }
+
+    /* Tracker Container */
+    .cursor-tracker {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 0;
+      height: 0;
+      will-change: transform;
+      pointer-events: none;
+      transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    /* Ambient Breathing Aura */
+    .cursor-aura {
+      position: absolute;
+      top: -24px;
+      left: -24px;
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(56, 189, 248, 0.22) 0%, rgba(99, 102, 241, 0.08) 55%, transparent 72%);
+      pointer-events: none;
+      animation: aura-breathe 2.8s ease-in-out infinite alternate;
+      transition: opacity 0.3s ease;
+    }
+    @keyframes aura-breathe {
+      0% { transform: scale(0.85); opacity: 0.45; }
+      100% { transform: scale(1.22); opacity: 0.9; }
+    }
+
+    /* Thinking / Executing Orbit Spinner */
+    .thinking-spinner {
+      position: absolute;
+      top: -14px;
+      left: -14px;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      border-top-color: #38bdf8;
+      border-right-color: #818cf8;
+      pointer-events: none;
+      opacity: 0;
+      transform: scale(0.7);
+      transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .thinking-spinner.active {
+      opacity: 1;
+      transform: scale(1);
+      animation: spin-orbit 0.85s linear infinite;
+    }
+    @keyframes spin-orbit {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Typing Beam Indicator */
+    .typing-beam {
+      position: absolute;
+      top: -2px;
+      left: -1px;
+      width: 2.5px;
+      height: 22px;
+      border-radius: 2px;
+      background: linear-gradient(180deg, #38bdf8 0%, #818cf8 100%);
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.85);
+      opacity: 0;
+      transform: scaleY(0.5);
+      pointer-events: none;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+    .typing-beam.active {
+      opacity: 1;
+      animation: typing-pulse 0.75s ease-in-out infinite alternate;
+    }
+    @keyframes typing-pulse {
+      0% { opacity: 0.35; transform: scaleY(0.7); }
+      100% { opacity: 1; transform: scaleY(1.15); }
+    }
+
+    /* Pointer Wrapper (Tilts & Stretches during Velocity Glide) */
+    .pointer-wrapper {
+      position: absolute;
+      top: 0;
+      left: 0;
+      transform-origin: 0 0;
+      will-change: transform;
+      transition: transform 0.08s ease-out;
+    }
+    .pointer-wrapper.pressed {
+      transform: scale(0.85) !important;
+      transition: transform 0.06s ease-in !important;
+    }
+
+    /* Minimalist Studio Vector Pointer */
+    .pointer-svg {
+      display: block;
+      overflow: visible;
+      transform: translate3d(0, 0, 0);
+    }
+
+    /* Minimalist Studio Pill Badge */
+    .agent-badge {
+      position: absolute;
+      left: 18px;
+      top: 16px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 8px 3px 6px;
+      border-radius: 9999px;
+      background: rgba(24, 24, 27, 0.88);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35), 0 0 1px rgba(255, 255, 255, 0.2);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 10px;
+      font-weight: 600;
+      color: #ffffff;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+      pointer-events: none;
+      transition: all 0.2s ease;
+    }
+    .badge-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #38bdf8;
+      box-shadow: 0 0 6px #38bdf8;
+      animation: dot-pulse 1.8s ease-in-out infinite alternate;
+    }
+    @keyframes dot-pulse {
+      0% { opacity: 0.5; transform: scale(0.8); }
+      100% { opacity: 1; transform: scale(1.2); }
+    }
+
+    /* Concentric Click Ripple */
+    .cursor-ripple {
+      position: absolute;
+      width: 32px;
+      height: 32px;
+      margin-left: -16px;
+      margin-top: -16px;
+      border-radius: 50%;
+      border: 2px solid rgba(56, 189, 248, 0.95);
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.6);
+      pointer-events: none;
+      animation: ripple-wave 0.55s cubic-bezier(0.1, 0.85, 0.25, 1) forwards;
+    }
+    @keyframes ripple-wave {
+      0% {
+        transform: scale(0.2);
+        opacity: 0.95;
+      }
+      100% {
+        transform: scale(2.8);
+        opacity: 0;
+      }
+    }
+  `;
+
+  function initOverlay() {
+    let existing = document.getElementById(OVERLAY_ID);
+    if (existing) {
+      try { existing.remove(); } catch (e) {}
+    }
+
+    rootElement = document.createElement("div");
+    rootElement.id = OVERLAY_ID;
+    rootElement.dataset.antigravityCursor = "true";
+    rootElement.setAttribute("aria-hidden", "true");
+    rootElement.setAttribute("inert", "");
+
+    shadowRoot = rootElement.attachShadow({ mode: "open" });
+
+    const styleEl = document.createElement("style");
+    styleEl.textContent = CSS_STYLES;
+    shadowRoot.appendChild(styleEl);
+
+    const viewport = document.createElement("div");
+    viewport.className = "overlay-viewport";
+    viewport.setAttribute("aria-hidden", "true");
+
+    ripplesLayer = document.createElement("div");
+    ripplesLayer.className = "ripples-layer";
+    viewport.appendChild(ripplesLayer);
+
+    tracker = document.createElement("div");
+    tracker.className = "cursor-tracker";
+    tracker.style.transform = `translate3d(${currentX}px, ${currentY}px, 0)`;
+
+    // Aura
+    cursorAura = document.createElement("div");
+    cursorAura.className = "cursor-aura";
+    tracker.appendChild(cursorAura);
+
+    // Thinking spinner
+    thinkingSpinner = document.createElement("div");
+    thinkingSpinner.className = "thinking-spinner";
+    tracker.appendChild(thinkingSpinner);
+
+    // Typing beam
+    typingBeam = document.createElement("div");
+    typingBeam.className = "typing-beam";
+    tracker.appendChild(typingBeam);
+
+    // Pointer wrapper
+    pointerWrapper = document.createElement("div");
+    pointerWrapper.className = "pointer-wrapper";
+
+    // Crisp Studio Vector Pointer SVG (Figma / macOS minimalist style)
+    pointerWrapper.innerHTML = `
+      <svg class="pointer-svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+        <defs>
+          <filter id="studio-shadow" x="-30%" y="-30%" width="160%" height="160%">
+            <feDropShadow dx="0" dy="2.5" stdDeviation="3" flood-color="rgba(0, 0, 0, 0.45)" />
+            <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="rgba(0, 0, 0, 0.3)" />
+          </filter>
+        </defs>
+        <path d="M0 0 L0 18 L5 13.5 L9 21.5 L12 20 L8 12.5 L15 12.5 Z" 
+              fill="#18181b" 
+              stroke="#ffffff" 
+              stroke-width="1.6" 
+              stroke-linejoin="round"
+              filter="url(#studio-shadow)" />
+      </svg>
+      <div class="agent-badge">
+        <span class="badge-dot"></span>
+        <span class="badge-text">Antigravity</span>
+      </div>
+    `;
+
+    badgeText = pointerWrapper.querySelector(".badge-text");
+    tracker.appendChild(pointerWrapper);
+    viewport.appendChild(tracker);
+    shadowRoot.appendChild(viewport);
+
+    const docEl = document.documentElement || document.body;
+    if (docEl) {
+      docEl.appendChild(rootElement);
+    }
+  }
+
+  // Animation Loop (Spring interpolation + Dynamic velocity banking)
+  function startAnimationLoop() {
+    if (animFrameId) cancelAnimationFrame(animFrameId);
+
+    function tick() {
+      const dx = targetX - currentX;
+      const dy = targetY - currentY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < 0.5) {
+        currentX = targetX;
+        currentY = targetY;
+        currentTilt += (0 - currentTilt) * 0.2;
+        currentStretch += (1 - currentStretch) * 0.2;
+        currentSqueeze += (1 - currentSqueeze) * 0.2;
+      } else {
+        // Smooth responsive spring movement
+        const factor = Math.min(0.28, Math.max(0.18, dist / 800));
+        currentX += dx * factor;
+        currentY += dy * factor;
+
+        // Dynamic velocity banking (tilts slightly in motion angle)
+        const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+        const desiredTilt = Math.max(-24, Math.min(24, (angle - 45) * 0.32));
+        currentTilt += (desiredTilt - currentTilt) * 0.25;
+
+        // Velocity stretch along motion vector
+        const desiredStretch = 1 + Math.min(0.18, dist / 700);
+        const desiredSqueeze = 1 - Math.min(0.08, dist / 1400);
+        currentStretch += (desiredStretch - currentStretch) * 0.25;
+        currentSqueeze += (desiredSqueeze - currentSqueeze) * 0.25;
+      }
+
+      if (tracker) {
+        tracker.style.transform = `translate3d(${Math.round(currentX)}px, ${Math.round(currentY)}px, 0)`;
+        tracker.style.opacity = isVisible ? "1" : "0";
+      }
+
+      if (pointerWrapper) {
+        pointerWrapper.style.transform = `rotate(${Math.round(currentTilt * 10) / 10}deg) scale(${Math.round(currentSqueeze * 1000) / 1000}, ${Math.round(currentStretch * 1000) / 1000})`;
+      }
+
+      animFrameId = requestAnimationFrame(tick);
+    }
+
+    animFrameId = requestAnimationFrame(tick);
+  }
+
+  // Interactive Click Ripple Effect
+  function spawnClickRipple(x, y, dblClick = false) {
+    if (!ripplesLayer) return;
+
+    // Pointer squish effect
+    if (pointerWrapper) {
+      pointerWrapper.classList.add("pressed");
+      setTimeout(() => {
+        if (pointerWrapper) pointerWrapper.classList.remove("pressed");
+      }, 90);
+    }
+
+    const ripple = document.createElement("div");
+    ripple.className = "cursor-ripple";
+    ripple.style.left = `${x}px`;
+    ripple.style.top = `${y}px`;
+    ripplesLayer.appendChild(ripple);
+
+    ripple.addEventListener("animationend", () => {
+      ripple.remove();
+    });
+
+    if (dblClick) {
+      setTimeout(() => {
+        if (!ripplesLayer) return;
+        const ripple2 = document.createElement("div");
+        ripple2.className = "cursor-ripple";
+        ripple2.style.left = `${x}px`;
+        ripple2.style.top = `${y}px`;
+        ripple2.style.borderColor = "rgba(129, 140, 248, 0.95)";
+        ripplesLayer.appendChild(ripple2);
+        ripple2.addEventListener("animationend", () => {
+          ripple2.remove();
+        });
+      }, 110);
+    }
+  }
+
+  // State Updates
+  function setCursorMode(mode, customBadge = "") {
+    currentMode = mode;
+
+    if (thinkingSpinner) {
+      if (mode === "thinking") {
+        thinkingSpinner.classList.add("active");
+      } else {
+        thinkingSpinner.classList.remove("active");
+      }
+    }
+
+    if (typingBeam) {
+      if (mode === "typing") {
+        typingBeam.classList.add("active");
+      } else {
+        typingBeam.classList.remove("active");
+      }
+    }
+
+    if (badgeText) {
+      if (customBadge) {
+        badgeText.textContent = customBadge;
+      } else if (mode === "thinking") {
+        badgeText.textContent = "Thinking...";
+      } else if (mode === "typing") {
+        badgeText.textContent = "Typing...";
+      } else {
+        badgeText.textContent = "Antigravity";
+      }
+    }
+  }
+
+  function applyCursorState(state) {
+    if (!state) return;
+
+    isVisible = state.isVisible !== false && state.cursor?.visible !== false;
+
+    if (state.cursor && typeof state.cursor.x === "number" && typeof state.cursor.y === "number") {
+      targetX = state.cursor.x;
+      targetY = state.cursor.y;
+
+      if (state.cursor.animateMovement === false) {
+        currentX = targetX;
+        currentY = targetY;
+      }
+    }
+
+    if (state.mode) {
+      setCursorMode(state.mode, state.badge);
+    } else if (state.actionType) {
+      if (state.actionType === "click") {
+        spawnClickRipple(targetX, targetY, state.dblClick);
+      } else if (state.actionType === "type") {
+        setCursorMode("typing");
+        setTimeout(() => setCursorMode("idle"), 1200);
+      } else if (state.actionType === "thinking") {
+        setCursorMode("thinking");
+      }
+    }
+  }
+
+  // Communication Handlers
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.type === "CONTENT_PING") {
+      sendResponse({ ok: true });
+      return true;
+    }
+
+    if (message?.type === "AGENT_CURSOR_STATE") {
+      applyCursorState(message.state);
+      sendResponse({ ok: true });
+      return true;
+    }
+
+    if (message?.type === "CURSOR_CLICK") {
+      spawnClickRipple(message.x || targetX, message.y || targetY, Boolean(message.dblClick));
+      sendResponse({ ok: true });
+      return true;
+    }
+
+    if (message?.type === "CURSOR_MODE") {
+      setCursorMode(message.mode || "idle", message.badge);
+      sendResponse({ ok: true });
+      return true;
+    }
+
+    return false;
+  });
+
+  // Startup: Initialize DOM and query background for active state
+  initOverlay();
+  startAnimationLoop();
+
+  chrome.runtime.sendMessage({ type: "GET_AGENT_CURSOR_STATE" }).then((res) => {
+    if (res?.ok && res.state) {
+      applyCursorState(res.state);
+    }
+  }).catch(() => {});
+})();
