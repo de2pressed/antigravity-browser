@@ -10,6 +10,8 @@ const agentOwnedTabs = new Set();
 const tabSnapshots = new Map(); // tabId -> { elementMap, time }
 const cursorStates = new Map(); // tabId -> { cursor, isVisible, sessionId, turnId }
 const cursorTimers = new Map(); // tabId -> setTimeout timer
+const activeRecordings = new Map(); // tabId -> { recordingId, tabId, outputPath, frameCount, startTime }
+const pendingRecordingFinalizations = new Map(); // recordingId -> { resolve, timer }
 
 // Persistent Tab Ownership across Service Worker Lifecycles
 async function loadAgentOwnedTabs() {
@@ -75,6 +77,15 @@ function connectNative() {
     }).catch(() => {});
 
     nativePort.onMessage.addListener((message) => {
+      if (message?.type === "recording_complete" && message.recordingId) {
+        const pending = pendingRecordingFinalizations.get(message.recordingId);
+        if (pending) {
+          pendingRecordingFinalizations.delete(message.recordingId);
+          clearTimeout(pending.timer);
+          pending.resolve(message.result);
+        }
+        return;
+      }
       handleRequest(message);
     });
 
@@ -421,6 +432,14 @@ async function handleRequest(msg) {
         await checkTabSafety(params);
         result = await runActions(params);
         break;
+      case "start_recording":
+        await checkTabSafety(params);
+        result = await startRecording(params);
+        break;
+      case "stop_recording":
+        await checkTabSafety(params);
+        result = await stopRecording(params);
+        break;
       default:
         throw new Error(`Unsupported method: ${method}`);
     }
@@ -639,6 +658,21 @@ function waitForTabComplete(tabId, timeoutMs = 25000) {
 chrome.debugger.onEvent.addListener((source, method, eventParams) => {
   if (method === "Page.javascriptDialogOpening" && source?.tabId) {
     cdpSend(source.tabId, "Page.handleJavaScriptDialog", { accept: true }).catch(() => {});
+  }
+  if (method === "Page.screencastFrame" && source?.tabId) {
+    const rec = activeRecordings.get(source.tabId);
+    if (rec) {
+      rec.frameCount++;
+      sendToHost({
+        type: "screencast_frame",
+        recordingId: rec.recordingId,
+        tabId: source.tabId,
+        frameIndex: rec.frameCount,
+        timestamp: eventParams.metadata?.timestamp || (Date.now() / 1000),
+        data: eventParams.data
+      });
+    }
+    cdpSend(source.tabId, "Page.screencastFrameAck", { sessionId: eventParams.sessionId }).catch(() => {});
   }
 });
 
@@ -889,7 +923,9 @@ async function typeText(params) {
   const tabId = parseInt(params.tabId, 10);
   await ensureDebugger(tabId);
 
-  if (params.uid) {
+  if (params.selector) {
+    await findAndClick({ tabId, selector: params.selector });
+  } else if (params.uid) {
     const snap = tabSnapshots.get(tabId);
     const elem = snap?.elementMap.get(params.uid);
     if (elem?.backendDOMNodeId) {
@@ -1043,6 +1079,91 @@ async function captureScreenshot(params) {
   };
 }
 
+async function startRecording(params) {
+  const tabId = parseInt(params.tabId, 10);
+  await checkTabSafety(params);
+  await ensureDebugger(tabId);
+
+  if (activeRecordings.has(tabId)) {
+    await stopRecording({ tabId });
+  }
+
+  const recordingId = params.recordingId || `rec_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const defaultDir = "/home/jayant/.gemini/antigravity/brain/6ced2199-4b2e-4da6-bada-d0b5930b3fae";
+  const outputPath = params.outputPath || `${defaultDir}/recording_tab_${tabId}_${Date.now()}.mp4`;
+
+  const rec = {
+    recordingId,
+    tabId,
+    outputPath,
+    frameCount: 0,
+    startTime: Date.now()
+  };
+  activeRecordings.set(tabId, rec);
+
+  sendToHost({
+    type: "recording_init",
+    recordingId,
+    tabId,
+    outputPath
+  });
+
+  await cdpSend(tabId, "Page.startScreencast", {
+    format: "jpeg",
+    quality: params.quality || 85,
+    maxWidth: params.maxWidth || 1920,
+    maxHeight: params.maxHeight || 1080,
+    everyNthFrame: 1
+  });
+
+  return { success: true, tabId, recordingId, outputPath, recording: true };
+}
+
+async function stopRecording(params) {
+  const tabId = parseInt(params.tabId, 10);
+  await checkTabSafety(params);
+
+  const rec = activeRecordings.get(tabId);
+  if (!rec) {
+    return { success: false, error: `No active recording found for tab ${tabId}.` };
+  }
+
+  activeRecordings.delete(tabId);
+  await cdpSend(tabId, "Page.stopScreencast").catch(() => {});
+
+  const stopTimestamp = Date.now() / 1000;
+  const durationSec = Math.max(0.1, (Date.now() - rec.startTime) / 1000);
+  const outPath = params.outputPath || rec.outputPath;
+
+  const finalResult = await new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pendingRecordingFinalizations.delete(rec.recordingId);
+      resolve({
+        success: true,
+        tabId,
+        recordingId: rec.recordingId,
+        outputPath: outPath,
+        frameCount: rec.frameCount,
+        duration: durationSec,
+        warning: "Finalization timed out before host confirmation"
+      });
+    }, 45000);
+
+    pendingRecordingFinalizations.set(rec.recordingId, { resolve, timer });
+
+    sendToHost({
+      type: "recording_finalize",
+      recordingId: rec.recordingId,
+      tabId,
+      outputPath: outPath,
+      stopTimestamp,
+      frameCount: rec.frameCount
+    });
+  });
+
+  return finalResult;
+}
+
 async function evaluateScript(params) {
   const tabId = parseInt(params.tabId, 10);
   await ensureDebugger(tabId);
@@ -1187,62 +1308,81 @@ async function runActions(params) {
   const tabId = parseInt(params.tabId, 10);
   await ensureDebugger(tabId);
 
+  let recordingActive = false;
+  const outPath = params.recordOutputPath || params.outputPath;
+  if (params.record === true || params.recordVideo === true) {
+    await startRecording({ tabId, outputPath: outPath });
+    recordingActive = true;
+  }
+
   const actions = Array.isArray(params.actions) ? params.actions : [];
   const results = [];
 
-  for (let i = 0; i < actions.length; i++) {
-    const act = actions[i];
-    const actTabId = act.tabId ? parseInt(act.tabId, 10) : tabId;
-    await checkTabSafety({ tabId: actTabId, allowExistingTab: params.allowExistingTab });
-    let res = null;
+  try {
+    for (let i = 0; i < actions.length; i++) {
+      const act = actions[i];
+      const actTabId = act.tabId ? parseInt(act.tabId, 10) : tabId;
+      await checkTabSafety({ tabId: actTabId, allowExistingTab: params.allowExistingTab });
+      let res = null;
 
-    switch (act.action || act.type) {
-      case "click":
-        if (act.selector || act.name || act.text) {
+      switch (act.action || act.type) {
+        case "click":
+          if (act.selector || act.name || act.text) {
+            res = await findAndClick({ tabId: actTabId, ...act });
+          } else {
+            res = await clickElement({ tabId: actTabId, ...act });
+          }
+          break;
+        case "find_and_click":
           res = await findAndClick({ tabId: actTabId, ...act });
-        } else {
-          res = await clickElement({ tabId: actTabId, ...act });
-        }
-        break;
-      case "find_and_click":
-        res = await findAndClick({ tabId: actTabId, ...act });
-        break;
-      case "type":
-        res = await typeText({ tabId: actTabId, ...act });
-        break;
-      case "press_key":
-      case "key":
-        res = await pressKey({ tabId: actTabId, ...act });
-        break;
-      case "paste":
-        res = await pasteClipboard({ tabId: actTabId, ...act });
-        break;
-      case "hover":
-        res = await hoverElement({ tabId: actTabId, ...act });
-        break;
-      case "scroll":
-        res = await scrollTab({ tabId: actTabId, ...act });
-        break;
-      case "wait":
-      case "sleep":
-        await new Promise(r => setTimeout(r, act.ms || 100));
-        res = { waitedMs: act.ms || 100 };
-        break;
-      case "evaluate":
-      case "eval":
-        res = await evaluateScript({ tabId: actTabId, expression: act.expression });
-        break;
-      default:
-        throw new Error(`Unknown batch action type: ${act.action || act.type}`);
+          break;
+        case "type":
+          res = await typeText({ tabId: actTabId, ...act });
+          break;
+        case "press_key":
+        case "key":
+          res = await pressKey({ tabId: actTabId, ...act });
+          break;
+        case "paste":
+          res = await pasteClipboard({ tabId: actTabId, ...act });
+          break;
+        case "hover":
+          res = await hoverElement({ tabId: actTabId, ...act });
+          break;
+        case "scroll":
+          res = await scrollTab({ tabId: actTabId, ...act });
+          break;
+        case "wait":
+        case "sleep":
+          await new Promise(r => setTimeout(r, act.ms || 100));
+          res = { waitedMs: act.ms || 100 };
+          break;
+        case "evaluate":
+        case "eval":
+          res = await evaluateScript({ tabId: actTabId, expression: act.expression });
+          break;
+        default:
+          throw new Error(`Unknown batch action type: ${act.action || act.type}`);
+      }
+      results.push(res);
+      // Micro delay between actions for UI settling
+      if (act.delay !== undefined) {
+        await new Promise(r => setTimeout(r, act.delay));
+      } else {
+        await new Promise(r => setTimeout(r, 40));
+      }
     }
-    results.push(res);
-    // Micro delay between actions for UI settling
-    if (act.delay !== undefined) {
-      await new Promise(r => setTimeout(r, act.delay));
-    } else {
-      await new Promise(r => setTimeout(r, 40));
+  } finally {
+    // Settle for visual smoothness before finalizing
+    if (recordingActive) {
+      await new Promise(r => setTimeout(r, 300));
     }
   }
 
-  return { success: true, tabId, count: actions.length, results };
+  let video = null;
+  if (recordingActive) {
+    video = await stopRecording({ tabId, outputPath: outPath });
+  }
+
+  return { success: true, tabId, count: actions.length, results, video };
 }

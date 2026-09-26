@@ -18,6 +18,7 @@ log(`Native host starting up. Args: ${JSON.stringify(process.argv)}`);
 
 let mcpSocket = null;
 let reconnectTimer = null;
+const activeHostRecordings = new Map(); // recordingId -> { dir, outputPath, frames: [], startTime }
 
 function detectLocalChromeProfile() {
   try {
@@ -130,6 +131,129 @@ function onChromeMessage(msg) {
       sendToChrome({ method: "set_profile", params: { profile: profileInfo } });
     }
     sendRegistration();
+    return;
+  }
+
+  // Handle Video Recording Lifecycle
+  if (msg.type === "recording_init") {
+    const dir = `/tmp/antigravity-recordings/${msg.recordingId}`;
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+    } catch (e) {}
+    activeHostRecordings.set(msg.recordingId, {
+      dir,
+      outputPath: msg.outputPath,
+      frames: [],
+      startTime: Date.now()
+    });
+    log(`Initialized recording session: ${msg.recordingId} at ${dir}`);
+    return;
+  }
+
+  if (msg.type === "screencast_frame") {
+    const rec = activeHostRecordings.get(msg.recordingId);
+    if (rec) {
+      const frameFile = path.join(rec.dir, `frame_${String(msg.frameIndex).padStart(6, "0")}.jpg`);
+      try {
+        fs.writeFileSync(frameFile, Buffer.from(msg.data, "base64"));
+        rec.frames.push({
+          file: frameFile,
+          timestamp: typeof msg.timestamp === "number" ? msg.timestamp : (Date.now() / 1000)
+        });
+      } catch (err) {
+        log(`Error writing screencast frame: ${err.message}`);
+      }
+    }
+    return;
+  }
+
+  if (msg.type === "recording_finalize") {
+    const rec = activeHostRecordings.get(msg.recordingId);
+    if (!rec || rec.frames.length === 0) {
+      log(`Finalizing recording ${msg.recordingId}: no frames recorded.`);
+      sendToChrome({
+        type: "recording_complete",
+        recordingId: msg.recordingId,
+        result: { success: false, error: "No frames captured during recording session." }
+      });
+      return;
+    }
+
+    const frames = rec.frames;
+    log(`Compiling ${frames.length} frames for recording ${msg.recordingId}...`);
+
+    let manifest = "ffconcat version 1.0\n";
+    for (let i = 0; i < frames.length; i++) {
+      let dur = 0.033;
+      if (i < frames.length - 1) {
+        dur = Math.max(0.01, frames[i + 1].timestamp - frames[i].timestamp);
+        dur = Math.min(10.0, dur);
+      } else {
+        dur = Math.max(0.2, (msg.stopTimestamp || (Date.now() / 1000)) - frames[i].timestamp);
+        dur = Math.min(3.0, dur);
+      }
+      manifest += `file '${frames[i].file}'\nduration ${dur.toFixed(4)}\n`;
+    }
+    manifest += `file '${frames[frames.length - 1].file}'\n`;
+
+    const listPath = path.join(rec.dir, "list.txt");
+    fs.writeFileSync(listPath, manifest, "utf8");
+
+    const finalOutput = path.resolve(msg.outputPath || rec.outputPath);
+    const outDir = path.dirname(finalOutput);
+    if (!fs.existsSync(outDir)) {
+      fs.mkdirSync(outDir, { recursive: true });
+    }
+
+    const { spawn } = require("child_process");
+    const ffArgs = [
+      "-y",
+      "-f", "concat",
+      "-safe", "0",
+      "-i", listPath,
+      "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
+      "-r", "30",
+      "-c:v", "libx264",
+      "-pix_fmt", "yuv420p",
+      "-movflags", "+faststart",
+      finalOutput
+    ];
+
+    const ff = spawn("ffmpeg", ffArgs);
+    ff.on("close", (code) => {
+      activeHostRecordings.delete(msg.recordingId);
+      try {
+        fs.rmSync(rec.dir, { recursive: true, force: true });
+      } catch (e) {}
+
+      if (code === 0 && fs.existsSync(finalOutput)) {
+        const stats = fs.statSync(finalOutput);
+        log(`Recording successfully compiled: ${finalOutput} (${stats.size} bytes)`);
+        sendToChrome({
+          type: "recording_complete",
+          recordingId: msg.recordingId,
+          result: {
+            success: true,
+            tabId: msg.tabId,
+            recordingId: msg.recordingId,
+            outputPath: finalOutput,
+            fileSizeBytes: stats.size,
+            frameCount: frames.length,
+            durationSeconds: Math.round(((Date.now() - rec.startTime) / 1000) * 10) / 10
+          }
+        });
+      } else {
+        log(`ffmpeg compilation failed with code ${code}`);
+        sendToChrome({
+          type: "recording_complete",
+          recordingId: msg.recordingId,
+          result: {
+            success: false,
+            error: `ffmpeg encoding failed with exit code ${code}`
+          }
+        });
+      }
+    });
     return;
   }
 

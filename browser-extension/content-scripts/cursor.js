@@ -56,14 +56,13 @@
       transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
-    /* Pointer Wrapper (Tilts & Stretches during Velocity Glide) */
+    /* Pointer Wrapper (Tilts & Stretches dynamically during movement) */
     .pointer-wrapper {
       position: absolute;
       top: 0;
       left: 0;
       transform-origin: 0 0;
       will-change: transform;
-      transition: transform 0.08s cubic-bezier(0.16, 1, 0.3, 1);
     }
     .pointer-wrapper.pressed {
       transform: scale(0.88) !important;
@@ -77,45 +76,42 @@
       transform: translate3d(0, 0, 0);
     }
 
-    /* Minimalist Studio Pill Badge */
+    /* Minimalist Gemini Badge - Circular in idle, expands to pill when thinking */
     .agent-badge {
       position: absolute;
-      left: 16px;
+      left: 17px;
       top: 15px;
       display: inline-flex;
       align-items: center;
-      gap: 4.5px;
-      padding: 2.5px 7.5px 2.5px 6px;
-      border-radius: 9999px;
+      justify-content: center;
+      gap: 4px;
+      width: 20px;
+      height: 20px;
+      padding: 0;
+      border-radius: 50%;
       background: rgba(24, 24, 27, 0.90);
       backdrop-filter: blur(14px);
       -webkit-backdrop-filter: blur(14px);
       border: 1px solid rgba(255, 255, 255, 0.14);
       box-shadow: 0 2px 7px rgba(0, 0, 0, 0.36), 0 0 1px rgba(255, 255, 255, 0.2);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      font-size: 9.5px;
-      font-weight: 600;
-      color: #ffffff;
-      letter-spacing: 0.02em;
-      white-space: nowrap;
       pointer-events: none;
-      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      transition: width 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-radius 0.2s cubic-bezier(0.16, 1, 0.3, 1), padding 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
-    .badge-dot {
-      width: 4.5px;
-      height: 4.5px;
-      border-radius: 50%;
-      background: #38bdf8;
-      box-shadow: 0 0 5px #38bdf8;
-      animation: dot-pulse 1.8s ease-in-out infinite alternate;
-      flex-shrink: 0;
-    }
-    @keyframes dot-pulse {
-      0% { opacity: 0.5; transform: scale(0.85); }
-      100% { opacity: 1; transform: scale(1.15); }
+    .agent-badge.thinking {
+      width: auto;
+      height: 20px;
+      padding: 0 6.5px;
+      border-radius: 9999px;
     }
 
-    /* Loading Circle Next to Antigravity Text */
+    .gemini-icon {
+      display: block;
+      width: 12.5px;
+      height: 12.5px;
+      flex-shrink: 0;
+    }
+
+    /* Loading Circle Next to Gemini Logo (Only visible during thinking mode) */
     .badge-spinner {
       display: none;
       width: 9.5px;
@@ -126,6 +122,12 @@
     }
     .badge-spinner.active {
       display: inline-block;
+    }
+    .badge-text {
+      display: none;
+    }
+    .badge-text.visible {
+      display: inline;
     }
     @keyframes spin-orbit {
       to { transform: rotate(360deg); }
@@ -178,20 +180,34 @@
               stroke-linejoin="round"
               filter="url(#studio-shadow)" />
       </svg>
-      <div class="agent-badge">
-        <span class="badge-dot"></span>
-        <span class="badge-text">Antigravity</span>
-        <svg class="badge-spinner" width="9.5" height="9.5" viewBox="0 0 16 16" fill="none">
-          <circle cx="8" cy="8" r="6" stroke="rgba(255, 255, 255, 0.22)" stroke-width="2.5" />
-          <path d="M14 8a6 6 0 0 0-6-6" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" />
-        </svg>
-      </div>
     `;
 
-    badgeText = pointerWrapper.querySelector(".badge-text");
-    badgeSpinner = pointerWrapper.querySelector(".badge-spinner");
+    // Sibling Pill Badge with Gemini Logo
+    const badgeEl = document.createElement("div");
+    badgeEl.className = "agent-badge";
+    badgeEl.innerHTML = `
+      <svg class="gemini-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="gemini-pill-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#4E82EE" />
+            <stop offset="50%" stop-color="#9B72CF" />
+            <stop offset="100%" stop-color="#1BA1E3" />
+          </linearGradient>
+        </defs>
+        <path d="M12 0C12 6.627 6.627 12 0 12C6.627 12 12 17.373 12 24C12 17.373 17.373 12 24 12C17.373 12 12 6.627 12 0Z" fill="url(#gemini-pill-grad)" />
+      </svg>
+      <span class="badge-text"></span>
+      <svg class="badge-spinner" width="9.5" height="9.5" viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="8" r="6" stroke="rgba(255, 255, 255, 0.22)" stroke-width="2.2" />
+        <path d="M14 8a6 6 0 0 0-6-6" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round" />
+      </svg>
+    `;
+
+    badgeText = badgeEl.querySelector(".badge-text");
+    badgeSpinner = badgeEl.querySelector(".badge-spinner");
 
     tracker.appendChild(pointerWrapper);
+    tracker.appendChild(badgeEl);
     viewport.appendChild(tracker);
     shadowRoot.appendChild(viewport);
 
@@ -201,7 +217,7 @@
     }
   }
 
-  // Animation Loop (Spring interpolation + Dynamic velocity banking)
+  // Animation Loop (Spring interpolation + Dynamic directional tilt)
   function startAnimationLoop() {
     if (animFrameId) cancelAnimationFrame(animFrameId);
 
@@ -210,28 +226,29 @@
       const dy = targetY - currentY;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
-      if (dist < 0.3) {
+      if (dist < 1.0) {
         currentX = targetX;
         currentY = targetY;
         currentTilt += (0 - currentTilt) * 0.25;
         currentStretch += (1 - currentStretch) * 0.25;
         currentSqueeze += (1 - currentSqueeze) * 0.25;
       } else {
-        // Refined responsive spring motion
-        const factor = Math.min(0.24, Math.max(0.16, dist / 900));
+        // Smooth responsive spring motion
+        const factor = Math.min(0.25, Math.max(0.15, dist / 800));
         currentX += dx * factor;
         currentY += dy * factor;
 
-        // Subtle, refined velocity banking: max tilt +/-15 deg
-        const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-        const desiredTilt = Math.max(-15, Math.min(15, (angle - 45) * 0.2));
-        currentTilt += (desiredTilt - currentTilt) * 0.2;
+        // Dynamic directional tilt: leans noticeably towards travel direction (+/- 25 deg)
+        const bankX = Math.max(-25, Math.min(25, dx / 8));
+        const bankY = Math.max(-10, Math.min(10, dy / 20));
+        const desiredTilt = bankX + (dx >= 0 ? bankY : -bankY);
+        currentTilt += (desiredTilt - currentTilt) * 0.35;
 
-        // Subtle velocity stretch
-        const desiredStretch = 1 + Math.min(0.08, dist / 1400);
-        const desiredSqueeze = 1 - Math.min(0.04, dist / 2800);
-        currentStretch += (desiredStretch - currentStretch) * 0.2;
-        currentSqueeze += (desiredSqueeze - currentSqueeze) * 0.2;
+        // Velocity stretch along motion vector
+        const desiredStretch = 1 + Math.min(0.10, dist / 1200);
+        const desiredSqueeze = 1 - Math.min(0.05, dist / 2400);
+        currentStretch += (desiredStretch - currentStretch) * 0.25;
+        currentSqueeze += (desiredSqueeze - currentSqueeze) * 0.25;
       }
 
       if (tracker) {
@@ -252,20 +269,25 @@
   // State Updates
   function setCursorMode(mode, customBadge = "") {
     currentMode = mode;
+    const badgeEl = shadowRoot ? shadowRoot.querySelector(".agent-badge") : null;
 
     if (badgeSpinner) {
       if (mode === "thinking") {
         badgeSpinner.classList.add("active");
+        if (badgeEl) badgeEl.classList.add("thinking");
       } else {
         badgeSpinner.classList.remove("active");
+        if (badgeEl) badgeEl.classList.remove("thinking");
       }
     }
 
     if (badgeText) {
       if (customBadge) {
         badgeText.textContent = customBadge;
+        badgeText.classList.add("visible");
       } else {
-        badgeText.textContent = "Antigravity";
+        badgeText.textContent = "";
+        badgeText.classList.remove("visible");
       }
     }
   }

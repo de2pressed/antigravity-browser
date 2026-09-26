@@ -377,6 +377,48 @@ const TOOLS = [
       },
       required: ["tabId", "expression"]
     }
+  },
+  {
+    name: "browser_record_start",
+    description: "Start recording a high-fidelity video of a tab via CDP screencast, capturing all visual interactions, persistent cursor movements, and DOM changes.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tabId: { type: "number", description: "The ID of the target tab." },
+        outputPath: { type: "string", description: "Optional destination path for the recorded video file (.mp4)." },
+        quality: { type: "number", description: "JPEG frame quality (1-100). Defaults to 85." }
+      },
+      required: ["tabId"]
+    }
+  },
+  {
+    name: "browser_record_stop",
+    description: "Stop recording video of a tab, compile the captured frames into an MP4 video using ffmpeg, and return the output video file path and metadata.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tabId: { type: "number", description: "The ID of the target tab." },
+        outputPath: { type: "string", description: "Optional destination path for the final MP4 video file." }
+      },
+      required: ["tabId"]
+    }
+  },
+  {
+    name: "browser_record_actions",
+    description: "Execute a batch of browser actions while simultaneously recording video, compiling the final workflow into an MP4 file upon completion.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tabId: { type: "number", description: "The target tab ID." },
+        actions: {
+          type: "array",
+          description: "Array of action objects to execute sequentially while recording.",
+          items: { type: "object" }
+        },
+        outputPath: { type: "string", description: "Optional destination path for the final MP4 video file." }
+      },
+      required: ["tabId", "actions"]
+    }
   }
 ];
 
@@ -430,8 +472,18 @@ rl.on("line", async (line) => {
     const args = params?.arguments || {};
 
     try {
-      const daemonMethod = toolName.replace(/^browser_/, "");
-      const res = await callDaemon(daemonMethod, args);
+      let daemonMethod = toolName.replace(/^browser_/, "");
+      let daemonArgs = { ...args };
+      if (toolName === "browser_record_start") {
+        daemonMethod = "start_recording";
+      } else if (toolName === "browser_record_stop") {
+        daemonMethod = "stop_recording";
+      } else if (toolName === "browser_record_actions") {
+        daemonMethod = "run_actions";
+        daemonArgs.record = true;
+      }
+      const timeoutMs = (daemonMethod === "stop_recording" || daemonArgs.record) ? 90000 : 30000;
+      const res = await callDaemon(daemonMethod, daemonArgs, timeoutMs);
 
       const content = [];
       if (toolName === "browser_snapshot") {

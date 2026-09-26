@@ -89,6 +89,9 @@ Usage:
   agy-browser screenshot <tabId> [-o <filePath>]
   agy-browser eval <tabId> <expression>
   agy-browser batch <tabId> '<actionsJson>'
+  agy-browser record-start <tabId> [-o <filePath>]
+  agy-browser record-stop <tabId> [-o <filePath>]
+  agy-browser record <tabId> '<actionsJson>' [-o <filePath>]
   agy-browser close <tabId>
   agy-browser cleanup (close all agent-created tabs)
   agy-browser reload-extension
@@ -296,6 +299,43 @@ Usage:
       const actionsJson = args.slice(2).join(" ");
       const actions = JSON.parse(actionsJson);
       const res = await callDaemon("run_actions", { tabId, actions });
+      console.log(JSON.stringify(res, null, 2));
+    } else if (cmd === "record-start") {
+      const tabId = parseInt(args[1], 10);
+      let outputPath = null;
+      for (let i = 2; i < args.length; i++) {
+        if ((args[i] === "-o" || args[i] === "--output") && args[i + 1]) {
+          outputPath = args[i + 1];
+          i++;
+        }
+      }
+      const res = await callDaemon("start_recording", { tabId, outputPath });
+      console.log(JSON.stringify(res, null, 2));
+    } else if (cmd === "record-stop") {
+      const tabId = parseInt(args[1], 10);
+      let outputPath = null;
+      for (let i = 2; i < args.length; i++) {
+        if ((args[i] === "-o" || args[i] === "--output") && args[i + 1]) {
+          outputPath = args[i + 1];
+          i++;
+        }
+      }
+      const res = await callDaemon("stop_recording", { tabId, outputPath }, 60000);
+      console.log(JSON.stringify(res, null, 2));
+    } else if (cmd === "record") {
+      const tabId = parseInt(args[1], 10);
+      let outputPath = null;
+      let actionsJson = null;
+      for (let i = 2; i < args.length; i++) {
+        if ((args[i] === "-o" || args[i] === "--output") && args[i + 1]) {
+          outputPath = args[i + 1];
+          i++;
+        } else if (!args[i].startsWith("--") && !actionsJson) {
+          actionsJson = args[i];
+        }
+      }
+      const actions = actionsJson ? JSON.parse(actionsJson) : [];
+      const res = await callDaemon("run_actions", { tabId, actions, record: true, outputPath }, 90000);
       console.log(JSON.stringify(res, null, 2));
     } else if (cmd === "close") {
       const tabId = parseInt(args[1], 10);
