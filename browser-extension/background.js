@@ -1167,26 +1167,21 @@ async function stopRecording(params) {
 async function evaluateScript(params) {
   const tabId = parseInt(params.tabId, 10);
   await ensureDebugger(tabId);
-  chrome.tabs.sendMessage(tabId, { type: "CURSOR_MODE", mode: "thinking" }).catch(() => {});
 
-  try {
-    const res = await cdpSend(tabId, "Runtime.evaluate", {
-      expression: params.expression,
-      returnByValue: true,
-      awaitPromise: true
-    });
+  const res = await cdpSend(tabId, "Runtime.evaluate", {
+    expression: params.expression,
+    returnByValue: true,
+    awaitPromise: true
+  });
 
-    if (res.exceptionDetails) {
-      throw new Error(res.exceptionDetails.text || "Script evaluation error");
-    }
-
-    return {
-      tabId,
-      value: res.result ? res.result.value : undefined
-    };
-  } finally {
-    chrome.tabs.sendMessage(tabId, { type: "CURSOR_MODE", mode: "idle" }).catch(() => {});
+  if (res.exceptionDetails) {
+    throw new Error(res.exceptionDetails.text || "Script evaluation error");
   }
+
+  return {
+    tabId,
+    value: res.result ? res.result.value : undefined
+  };
 }
 
 // 10. Semantic Locators, Bulk Paste, and Compound Batch Execution

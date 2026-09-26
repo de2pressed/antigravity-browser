@@ -76,18 +76,23 @@
       transform: translate3d(0, 0, 0);
     }
 
-    /* Minimalist Gemini Badge - Circular in idle, expands to pill when thinking */
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    /* Minimalist Gemini Badge - Perfectly circular and centered in idle */
     .agent-badge {
       position: absolute;
       left: 17px;
       top: 15px;
+      box-sizing: border-box;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 4px;
       width: 20px;
       height: 20px;
       padding: 0;
+      gap: 0;
       border-radius: 50%;
       background: rgba(24, 24, 27, 0.90);
       backdrop-filter: blur(14px);
@@ -95,20 +100,30 @@
       border: 1px solid rgba(255, 255, 255, 0.14);
       box-shadow: 0 2px 7px rgba(0, 0, 0, 0.36), 0 0 1px rgba(255, 255, 255, 0.2);
       pointer-events: none;
-      transition: width 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-radius 0.2s cubic-bezier(0.16, 1, 0.3, 1), padding 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow: hidden;
+      white-space: nowrap;
+      transition: width 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                  border-radius 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                  padding 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                  gap 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
     .agent-badge.thinking {
       width: auto;
       height: 20px;
       padding: 0 6.5px;
+      gap: 4px;
       border-radius: 9999px;
     }
 
     .gemini-icon {
       display: block;
-      width: 12.5px;
-      height: 12.5px;
+      width: 12px;
+      height: 12px;
+      margin: auto;
       flex-shrink: 0;
+    }
+    .agent-badge.thinking .gemini-icon {
+      margin: 0;
     }
 
     /* Loading Circle Next to Gemini Logo (Only visible during thinking mode) */
@@ -117,7 +132,7 @@
       width: 9.5px;
       height: 9.5px;
       animation: spin-orbit 0.75s linear infinite;
-      margin-left: 2px;
+      margin-left: 1px;
       flex-shrink: 0;
     }
     .badge-spinner.active {
@@ -125,6 +140,11 @@
     }
     .badge-text {
       display: none;
+      font-size: 10px;
+      line-height: 1;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: rgba(255, 255, 255, 0.9);
+      font-weight: 500;
     }
     .badge-text.visible {
       display: inline;
@@ -182,26 +202,10 @@
       </svg>
     `;
 
-    // Sibling Pill Badge with Gemini Logo
+    // Sibling Pill Badge with Official Google Gemini Logo
     const badgeEl = document.createElement("div");
     badgeEl.className = "agent-badge";
-    badgeEl.innerHTML = `
-      <svg class="gemini-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <linearGradient id="gemini-pill-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#4E82EE" />
-            <stop offset="50%" stop-color="#9B72CF" />
-            <stop offset="100%" stop-color="#1BA1E3" />
-          </linearGradient>
-        </defs>
-        <path d="M12 0C12 6.627 6.627 12 0 12C6.627 12 12 17.373 12 24C12 17.373 17.373 12 24 12C17.373 12 12 6.627 12 0Z" fill="url(#gemini-pill-grad)" />
-      </svg>
-      <span class="badge-text"></span>
-      <svg class="badge-spinner" width="9.5" height="9.5" viewBox="0 0 16 16" fill="none">
-        <circle cx="8" cy="8" r="6" stroke="rgba(255, 255, 255, 0.22)" stroke-width="2.2" />
-        <path d="M14 8a6 6 0 0 0-6-6" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round" />
-      </svg>
-    `;
+    badgeEl.innerHTML = `<svg class="gemini-icon" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg"><defs><radialGradient id="gemini-official-grad" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(2.77876 11.3795) rotate(18.6832) scale(29.8025 238.737)"><stop offset="0.0671246" stop-color="#9168C0"/><stop offset="0.342551" stop-color="#5684D1"/><stop offset="0.672076" stop-color="#1BA1E3"/></radialGradient></defs><path d="M14 28C14 26.0633 13.6267 24.2433 12.88 22.54C12.1567 20.8367 11.165 19.355 9.905 18.095C8.645 16.835 7.16333 15.8433 5.46 15.12C3.75667 14.3733 1.93667 14 0 14C1.93667 14 3.75667 13.6383 5.46 12.915C7.16333 12.1683 8.645 11.165 9.905 9.905C11.165 8.645 12.1567 7.16333 12.88 5.46C13.6267 3.75667 14 1.93667 14 0C14 1.93667 14.3617 3.75667 15.085 5.46C15.8317 7.16333 16.835 8.645 18.095 9.905C19.355 11.165 20.8367 12.1683 22.54 12.915C24.2433 13.6383 26.0633 14 28 14C26.0633 14 24.2433 14.3733 22.54 15.12C20.8367 15.8433 19.355 16.835 18.095 18.095C16.835 19.355 15.8317 20.8367 15.085 22.54C14.3617 24.2433 14 26.0633 14 28Z" fill="url(#gemini-official-grad)"/></svg><span class="badge-text"></span><svg class="badge-spinner" width="9.5" height="9.5" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="rgba(255, 255, 255, 0.22)" stroke-width="2.2"/><path d="M14 8a6 6 0 0 0-6-6" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round"/></svg>`;
 
     badgeText = badgeEl.querySelector(".badge-text");
     badgeSpinner = badgeEl.querySelector(".badge-spinner");
