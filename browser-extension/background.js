@@ -200,7 +200,8 @@ async function ensureCursorScript(tabId) {
   try {
     await chrome.scripting.executeScript({
       target: { tabId },
-      files: ["content-scripts/cursor.js"]
+      files: ["content-scripts/cursor.js"],
+      injectImmediately: true
     });
     return true;
   } catch (e) {
