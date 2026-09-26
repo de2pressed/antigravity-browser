@@ -1,6 +1,6 @@
 // Antigravity Browser Bridge - Minimalist Modern Studio Cursor (v1.6.0)
-// High-precision compact vector cursor with Figma/macOS aesthetics, dynamic velocity banking,
-// interactive click ripples, inline loading circle next to Antigravity text, and typing beam mode.
+// High-precision vector cursor with Figma/macOS aesthetics, dynamic velocity banking,
+// and inline loading circle next to Antigravity text during thinking mode.
 
 (function () {
   const OVERLAY_ID = "codex-agent-overlay-root"; // Retain id for backward compatibility
@@ -12,10 +12,8 @@
   let tracker = null;
   let pointerWrapper = null;
   let cursorAura = null;
-  let typingBeam = null;
   let badgeSpinner = null;
   let badgeText = null;
-  let ripplesLayer = null;
 
   // State
   let currentX = 350;
@@ -23,7 +21,7 @@
   let targetX = 350;
   let targetY = 250;
   let isVisible = true;
-  let currentMode = "idle"; // "idle" | "thinking" | "typing"
+  let currentMode = "idle"; // "idle" | "thinking"
   let currentTilt = 0;
   let currentStretch = 1;
   let currentSqueeze = 1;
@@ -59,13 +57,13 @@
       transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
-    /* Ambient Breathing Aura - Compact & Subtle */
+    /* Ambient Breathing Aura - Balanced & Subtle */
     .cursor-aura {
       position: absolute;
-      top: -18px;
-      left: -18px;
-      width: 36px;
-      height: 36px;
+      top: -21px;
+      left: -21px;
+      width: 42px;
+      height: 42px;
       border-radius: 50%;
       background: radial-gradient(circle, rgba(56, 189, 248, 0.22) 0%, rgba(99, 102, 241, 0.06) 55%, transparent 72%);
       pointer-events: none;
@@ -75,30 +73,6 @@
     @keyframes aura-breathe {
       0% { transform: scale(0.85); opacity: 0.4; }
       100% { transform: scale(1.15); opacity: 0.85; }
-    }
-
-    /* Typing Beam Indicator */
-    .typing-beam {
-      position: absolute;
-      top: -1px;
-      left: -1px;
-      width: 2px;
-      height: 16px;
-      border-radius: 2px;
-      background: linear-gradient(180deg, #38bdf8 0%, #818cf8 100%);
-      box-shadow: 0 0 8px rgba(56, 189, 248, 0.85);
-      opacity: 0;
-      transform: scaleY(0.5);
-      pointer-events: none;
-      transition: opacity 0.18s ease, transform 0.18s ease;
-    }
-    .typing-beam.active {
-      opacity: 1;
-      animation: typing-pulse 0.75s ease-in-out infinite alternate;
-    }
-    @keyframes typing-pulse {
-      0% { opacity: 0.35; transform: scaleY(0.75); }
-      100% { opacity: 1; transform: scaleY(1.1); }
     }
 
     /* Pointer Wrapper (Tilts & Stretches during Velocity Glide) */
@@ -115,7 +89,7 @@
       transition: transform 0.05s ease-in !important;
     }
 
-    /* Minimalist Studio Vector Pointer - Compact 16px Size */
+    /* Minimalist Studio Vector Pointer - 18.5px (+15% scale) */
     .pointer-svg {
       display: block;
       overflow: visible;
@@ -125,12 +99,12 @@
     /* Minimalist Studio Pill Badge */
     .agent-badge {
       position: absolute;
-      left: 14px;
-      top: 13px;
+      left: 16px;
+      top: 15px;
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      padding: 2.5px 7px 2.5px 5.5px;
+      gap: 4.5px;
+      padding: 2.5px 7.5px 2.5px 6px;
       border-radius: 9999px;
       background: rgba(24, 24, 27, 0.90);
       backdrop-filter: blur(14px);
@@ -138,7 +112,7 @@
       border: 1px solid rgba(255, 255, 255, 0.14);
       box-shadow: 0 2px 7px rgba(0, 0, 0, 0.36), 0 0 1px rgba(255, 255, 255, 0.2);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      font-size: 9px;
+      font-size: 9.5px;
       font-weight: 600;
       color: #ffffff;
       letter-spacing: 0.02em;
@@ -163,8 +137,8 @@
     /* Loading Circle Next to Antigravity Text */
     .badge-spinner {
       display: none;
-      width: 9px;
-      height: 9px;
+      width: 9.5px;
+      height: 9.5px;
       animation: spin-orbit 0.75s linear infinite;
       margin-left: 2px;
       flex-shrink: 0;
@@ -174,34 +148,6 @@
     }
     @keyframes spin-orbit {
       to { transform: rotate(360deg); }
-    }
-
-    /* Concentric Click Ripple */
-    .cursor-ripple {
-      position: absolute;
-      width: 32px;
-      height: 32px;
-      margin-left: -16px;
-      margin-top: -16px;
-      border-radius: 50%;
-      border: 2px solid rgba(56, 189, 248, 0.95);
-      background: radial-gradient(circle, rgba(56, 189, 248, 0.22) 0%, rgba(99, 102, 241, 0.08) 50%, transparent 72%);
-      box-shadow: 0 0 16px rgba(56, 189, 248, 0.7);
-      pointer-events: none;
-      animation: ripple-wave 0.75s cubic-bezier(0.12, 0.8, 0.24, 1) forwards;
-    }
-    @keyframes ripple-wave {
-      0% {
-        transform: scale(0.25);
-        opacity: 1;
-      }
-      50% {
-        opacity: 0.85;
-      }
-      100% {
-        transform: scale(2.8);
-        opacity: 0;
-      }
     }
   `;
 
@@ -227,10 +173,6 @@
     viewport.className = "overlay-viewport";
     viewport.setAttribute("aria-hidden", "true");
 
-    ripplesLayer = document.createElement("div");
-    ripplesLayer.className = "ripples-layer";
-    viewport.appendChild(ripplesLayer);
-
     tracker = document.createElement("div");
     tracker.className = "cursor-tracker";
     tracker.style.transform = `translate3d(${currentX}px, ${currentY}px, 0)`;
@@ -240,18 +182,13 @@
     cursorAura.className = "cursor-aura";
     tracker.appendChild(cursorAura);
 
-    // Typing beam
-    typingBeam = document.createElement("div");
-    typingBeam.className = "typing-beam";
-    tracker.appendChild(typingBeam);
-
     // Pointer wrapper
     pointerWrapper = document.createElement("div");
     pointerWrapper.className = "pointer-wrapper";
 
-    // Compact Vector Pointer SVG (16px size with crisp Figma / macOS minimalist styling)
+    // Crisp Vector Pointer SVG (18.5px size, +15% scale with Figma / macOS minimalist styling)
     pointerWrapper.innerHTML = `
-      <svg class="pointer-svg" width="16" height="16" viewBox="0 0 24 24" fill="none">
+      <svg class="pointer-svg" width="18.5" height="18.5" viewBox="0 0 24 24" fill="none">
         <defs>
           <filter id="studio-shadow" x="-40%" y="-40%" width="180%" height="180%">
             <feDropShadow dx="0" dy="1.8" stdDeviation="1.8" flood-color="rgba(0, 0, 0, 0.45)" />
@@ -268,7 +205,7 @@
       <div class="agent-badge">
         <span class="badge-dot"></span>
         <span class="badge-text">Antigravity</span>
-        <svg class="badge-spinner" width="9" height="9" viewBox="0 0 16 16" fill="none">
+        <svg class="badge-spinner" width="9.5" height="9.5" viewBox="0 0 16 16" fill="none">
           <circle cx="8" cy="8" r="6" stroke="rgba(255, 255, 255, 0.22)" stroke-width="2.5" />
           <path d="M14 8a6 6 0 0 0-6-6" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" />
         </svg>
@@ -336,44 +273,6 @@
     animFrameId = requestAnimationFrame(tick);
   }
 
-  // Interactive Click Ripple Effect
-  function spawnClickRipple(x, y, dblClick = false) {
-    if (!ripplesLayer) return;
-
-    // Pointer squish effect
-    if (pointerWrapper) {
-      pointerWrapper.classList.add("pressed");
-      setTimeout(() => {
-        if (pointerWrapper) pointerWrapper.classList.remove("pressed");
-      }, 80);
-    }
-
-    const ripple = document.createElement("div");
-    ripple.className = "cursor-ripple";
-    ripple.style.left = `${x}px`;
-    ripple.style.top = `${y}px`;
-    ripplesLayer.appendChild(ripple);
-
-    ripple.addEventListener("animationend", () => {
-      ripple.remove();
-    });
-
-    if (dblClick) {
-      setTimeout(() => {
-        if (!ripplesLayer) return;
-        const ripple2 = document.createElement("div");
-        ripple2.className = "cursor-ripple";
-        ripple2.style.left = `${x}px`;
-        ripple2.style.top = `${y}px`;
-        ripple2.style.borderColor = "rgba(129, 140, 248, 0.95)";
-        ripplesLayer.appendChild(ripple2);
-        ripple2.addEventListener("animationend", () => {
-          ripple2.remove();
-        });
-      }, 110);
-    }
-  }
-
   // State Updates
   function setCursorMode(mode, customBadge = "") {
     currentMode = mode;
@@ -386,19 +285,9 @@
       }
     }
 
-    if (typingBeam) {
-      if (mode === "typing") {
-        typingBeam.classList.add("active");
-      } else {
-        typingBeam.classList.remove("active");
-      }
-    }
-
     if (badgeText) {
       if (customBadge) {
         badgeText.textContent = customBadge;
-      } else if (mode === "typing") {
-        badgeText.textContent = "Typing...";
       } else {
         badgeText.textContent = "Antigravity";
       }
@@ -422,15 +311,8 @@
 
     if (state.mode) {
       setCursorMode(state.mode, state.badge);
-    } else if (state.actionType) {
-      if (state.actionType === "click") {
-        spawnClickRipple(targetX, targetY, state.dblClick);
-      } else if (state.actionType === "type") {
-        setCursorMode("typing");
-        setTimeout(() => setCursorMode("idle"), 1200);
-      } else if (state.actionType === "thinking") {
-        setCursorMode("thinking");
-      }
+    } else if (state.actionType === "thinking") {
+      setCursorMode("thinking");
     }
   }
 
@@ -443,12 +325,6 @@
 
     if (message?.type === "AGENT_CURSOR_STATE") {
       applyCursorState(message.state);
-      sendResponse({ ok: true });
-      return true;
-    }
-
-    if (message?.type === "CURSOR_CLICK") {
-      spawnClickRipple(message.x || targetX, message.y || targetY, Boolean(message.dblClick));
       sendResponse({ ok: true });
       return true;
     }

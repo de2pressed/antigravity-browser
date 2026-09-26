@@ -822,7 +822,6 @@ async function clickElement(params) {
 
   // Visual animated cursor glide to target without blocking CDP execution
   updateCursor(tabId, x, y, { animate: true }).catch(() => {});
-  chrome.tabs.sendMessage(tabId, { type: "CURSOR_CLICK", x, y, dblClick: Boolean(params.dblClick) }).catch(() => {});
 
   // Hardware mouse click via CDP
   await cdpSend(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
@@ -888,46 +887,41 @@ async function dragElement(params) {
 async function typeText(params) {
   const tabId = parseInt(params.tabId, 10);
   await ensureDebugger(tabId);
-  chrome.tabs.sendMessage(tabId, { type: "CURSOR_MODE", mode: "typing" }).catch(() => {});
 
-  try {
-    if (params.uid) {
-      const snap = tabSnapshots.get(tabId);
-      const elem = snap?.elementMap.get(params.uid);
-      if (elem?.backendDOMNodeId) {
-        try {
-          await cdpSend(tabId, "DOM.focus", { backendNodeId: elem.backendDOMNodeId });
-        } catch (e) {}
-      }
-      await clickElement(params);
-    } else if (params.x !== undefined && params.y !== undefined) {
-      await clickElement(params);
+  if (params.uid) {
+    const snap = tabSnapshots.get(tabId);
+    const elem = snap?.elementMap.get(params.uid);
+    if (elem?.backendDOMNodeId) {
+      try {
+        await cdpSend(tabId, "DOM.focus", { backendNodeId: elem.backendDOMNodeId });
+      } catch (e) {}
     }
-
-    const text = params.text || "";
-
-    if (params.clear) {
-      // Ctrl+A / Cmd+A
-      await cdpSend(tabId, "Input.dispatchKeyEvent", { type: "keyDown", windowsVirtualKeyCode: 65, modifiers: 2 });
-      await cdpSend(tabId, "Input.dispatchKeyEvent", { type: "keyUp", windowsVirtualKeyCode: 65, modifiers: 2 });
-      // Backspace
-      await cdpSend(tabId, "Input.dispatchKeyEvent", { type: "keyDown", windowsVirtualKeyCode: 8 });
-      await cdpSend(tabId, "Input.dispatchKeyEvent", { type: "keyUp", windowsVirtualKeyCode: 8 });
-    }
-
-    // Fast atomic insertion via CDP Input.insertText
-    if (text) {
-      await cdpSend(tabId, "Input.insertText", { text });
-    }
-
-    if (params.pressEnter || params.enter) {
-      await pressKey({ tabId, key: "Enter" });
-    }
-
-    return { success: true, tabId, typedLength: text.length };
-  } finally {
-    chrome.tabs.sendMessage(tabId, { type: "CURSOR_MODE", mode: "idle" }).catch(() => {});
+    await clickElement(params);
+  } else if (params.x !== undefined && params.y !== undefined) {
+    await clickElement(params);
   }
+
+  const text = params.text || "";
+
+  if (params.clear) {
+    // Ctrl+A / Cmd+A
+    await cdpSend(tabId, "Input.dispatchKeyEvent", { type: "keyDown", windowsVirtualKeyCode: 65, modifiers: 2 });
+    await cdpSend(tabId, "Input.dispatchKeyEvent", { type: "keyUp", windowsVirtualKeyCode: 65, modifiers: 2 });
+    // Backspace
+    await cdpSend(tabId, "Input.dispatchKeyEvent", { type: "keyDown", windowsVirtualKeyCode: 8 });
+    await cdpSend(tabId, "Input.dispatchKeyEvent", { type: "keyUp", windowsVirtualKeyCode: 8 });
+  }
+
+  // Fast atomic insertion via CDP Input.insertText
+  if (text) {
+    await cdpSend(tabId, "Input.insertText", { text });
+  }
+
+  if (params.pressEnter || params.enter) {
+    await pressKey({ tabId, key: "Enter" });
+  }
+
+  return { success: true, tabId, typedLength: text.length };
 }
 
 async function pressKey(params) {
