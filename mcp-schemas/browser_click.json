@@ -1,1 +1,42 @@
-{"name":"browser_click","description":"Perform a hardware mouse click on an element by UID (auto-scrolled into view with smooth animated cursor) or by coordinates (x, y).","parameters":{"properties":{"button":{"description":"Mouse button. Defaults to left.","enum":["left","right","middle"],"type":"string"},"dblClick":{"description":"Whether to double click.","type":"boolean"},"tabId":{"description":"The ID of the target tab.","type":"number"},"uid":{"description":"The UID of the element from browser_snapshot (e.g. '123_4').","type":"string"},"x":{"description":"Optional explicit X coordinate.","type":"number"},"y":{"description":"Optional explicit Y coordinate.","type":"number"}},"required":["tabId"],"type":"object"}}
+{
+  "name": "browser_click",
+  "description": "Perform a hardware mouse click on an element by UID (auto-scrolled into view with smooth animated cursor) or by coordinates (x, y).",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "tabId": {
+        "type": "integer",
+        "description": "The ID of the target tab.",
+        "minimum": 1
+      },
+      "uid": {
+        "type": "string",
+        "description": "The UID of the element from browser_snapshot (e.g. '123_4')."
+      },
+      "x": {
+        "type": "number",
+        "description": "Optional explicit X coordinate."
+      },
+      "y": {
+        "type": "number",
+        "description": "Optional explicit Y coordinate."
+      },
+      "button": {
+        "type": "string",
+        "enum": [
+          "left",
+          "right",
+          "middle"
+        ],
+        "description": "Mouse button. Defaults to left."
+      },
+      "dblClick": {
+        "type": "boolean",
+        "description": "Whether to double click."
+      }
+    },
+    "required": [
+      "tabId"
+    ]
+  }
+}

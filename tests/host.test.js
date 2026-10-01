@@ -1,0 +1,14 @@
+const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const path=require('node:path');const os=require('node:os');const {spawn}=require('node:child_process');const {once}=require('node:events');
+const delay=ms=>new Promise(r=>setTimeout(r,ms));
+function frame(msg){const data=Buffer.from(JSON.stringify(msg));const header=Buffer.alloc(4);header.writeUInt32LE(data.length);return Buffer.concat([header,data]);}
+test('native host handles fragmented frames, zero frames, unsafe IDs, and missing ffmpeg without crashing',async t=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'agy-host-test-'));const child=spawn(process.execPath,[path.join(__dirname,'../browser-bridge/host.js')],{env:{...process.env,PATH:dir,ANTIGRAVITY_NATIVE_LOG:path.join(dir,'native.log'),ANTIGRAVITY_SOCKET_PATH:path.join(dir,'absent.sock')},stdio:'pipe'});t.after(()=>{child.kill();fs.rmSync(dir,{recursive:true,force:true});});
+ let buf=Buffer.alloc(0);const messages=[];child.stdout.on('data',chunk=>{buf=Buffer.concat([buf,chunk]);while(buf.length>=4&&buf.length>=4+buf.readUInt32LE()){const len=buf.readUInt32LE();messages.push(JSON.parse(buf.subarray(4,4+len)));buf=buf.subarray(4+len);}});
+ const init=frame({type:'recording_init',recordingId:'zero_test',outputPath:path.join(dir,'zero.mp4')});child.stdin.write(init.subarray(0,2));child.stdin.write(init.subarray(2));child.stdin.write(frame({type:'recording_finalize',recordingId:'zero_test'}));
+ child.stdin.write(frame({type:'recording_init',recordingId:'../unsafe'}));
+ child.stdin.write(frame({type:'recording_init',recordingId:'encode_test',outputPath:path.join(dir,'record.mp4')}));child.stdin.write(frame({type:'screencast_frame',recordingId:'encode_test',frameIndex:1,data:'aGVsbG8=',timestamp:1}));child.stdin.write(frame({type:'recording_finalize',recordingId:'encode_test',stopTimestamp:2}));
+ for(let i=0;i<100&&messages.filter(m=>m.type==='recording_complete').length<2;i++)await delay(10);
+ const done=messages.filter(m=>m.type==='recording_complete');assert.equal(done.length,2);assert.equal(done[0].result.success,false);assert.match(done[1].result.error,/Unable to run ffmpeg/);assert.equal(child.exitCode,null);
+ child.stdin.end();assert.equal((await once(child,'exit'))[0],0);
+});
+test('native host rejects oversized inbound frame length immediately',async t=>{const dir=fs.mkdtempSync(path.join(os.tmpdir(),'agy-frame-test-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));const child=spawn(process.execPath,[path.join(__dirname,'../browser-bridge/host.js')],{env:{...process.env,ANTIGRAVITY_NATIVE_LOG:path.join(dir,'native.log'),ANTIGRAVITY_SOCKET_PATH:path.join(dir,'absent.sock')},stdio:'pipe'});const header=Buffer.alloc(4);header.writeUInt32LE(64*1024*1024+1);child.stdin.write(header);assert.equal((await once(child,'exit'))[0],1);});

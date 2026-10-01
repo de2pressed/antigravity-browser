@@ -1,1 +1,22 @@
-{"name":"browser_evaluate","description":"Evaluate a JavaScript expression in the page context and return the result value.","parameters":{"properties":{"expression":{"description":"JavaScript code string to evaluate.","type":"string"},"tabId":{"description":"The ID of the target tab.","type":"number"}},"required":["tabId","expression"],"type":"object"}}
+{
+  "name": "browser_evaluate",
+  "description": "Evaluate a JavaScript expression in the page context and return the result value.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "tabId": {
+        "type": "integer",
+        "description": "The ID of the target tab.",
+        "minimum": 1
+      },
+      "expression": {
+        "type": "string",
+        "description": "JavaScript code string to evaluate."
+      }
+    },
+    "required": [
+      "tabId",
+      "expression"
+    ]
+  }
+}

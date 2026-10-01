@@ -4,10 +4,10 @@ const net = require("net");
 const fs = require("fs");
 const readline = require("readline");
 
-const SOCKET_PATH = "/tmp/antigravity-browser-bridge.sock";
+const SOCKET_PATH = process.env.ANTIGRAVITY_SOCKET_PATH || "/tmp/antigravity-browser-bridge.sock";
 
 const { spawn } = require("child_process");
-const DAEMON_SCRIPT = "/home/jayant/.gemini/antigravity/browser-bridge/bridge-daemon.js";
+const DAEMON_SCRIPT = require("path").join(__dirname, "bridge-daemon.js");
 
 let daemonStarting = null;
 
@@ -23,15 +23,13 @@ function ensureDaemonRunning() {
       resolve(true);
     });
     testSock.on("error", () => {
-      try {
-        if (fs.existsSync(SOCKET_PATH)) fs.unlinkSync(SOCKET_PATH);
-      } catch (e) {}
 
       // Spawn daemon in background detached
       const child = spawn(process.execPath, [DAEMON_SCRIPT], {
         detached: true,
         stdio: "ignore"
       });
+      child.on("error", () => {});
       child.unref();
 
       // Wait up to 2 seconds for socket creation
@@ -74,6 +72,7 @@ async function callDaemon(method, params = {}, timeoutMs = 30000) {
       socket.write(JSON.stringify({ id: reqId, method, params }) + "\n");
     });
 
+    socket.setEncoding("utf8");
     let buffer = "";
     socket.on("data", (chunk) => {
       buffer += chunk.toString("utf8");
@@ -101,6 +100,13 @@ async function callDaemon(method, params = {}, timeoutMs = 30000) {
       }
     });
 
+    socket.on("close", () => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timer);
+        reject(new Error("Bridge disconnected before responding; action outcome may be unknown."));
+      }
+    });
     socket.on("error", (err) => {
       if (!resolved) {
         resolved = true;
@@ -149,7 +155,7 @@ const TOOLS = [
   },
   {
     name: "browser_paste",
-    description: "Paste text, TSV, or styled HTML directly into the active element/selection in the page via dual DataTransfer clipboard injection.",
+    description: "Paste text, TSV, or styled HTML directly into the active element/selection in the page via one paste event, with native text insertion for ordinary editors. Verify application state after pasting.",
     inputSchema: {
       type: "object",
       properties: {
@@ -186,13 +192,13 @@ const TOOLS = [
   },
   {
     name: "browser_new_tab",
-    description: "Open a URL in a new tab in an existing Chrome profile window without launching CLI processes. Supports targeting 'devops@qtloads.com' (or 'devops') or 'jayantdahiya1204@gmail.com' (or 'default').",
+    description: "Open a URL in a new tab in an existing Chrome profile window without launching CLI processes. Specify a connected profile email, exact name, host ID, or unique substring when multiple profiles are connected.",
     inputSchema: {
       type: "object",
       properties: {
         url: { type: "string", description: "The destination URL. Defaults to about:blank." },
-        profile: { type: "string", description: "Profile to open tab in: 'devops@qtloads.com', 'devops', 'qtloads', 'jayantdahiya1204@gmail.com', or 'default'." },
-        active: { type: "boolean", description: "Whether to activate the new tab. Defaults to true." }
+        profile: { type: "string", description: "Connected profile email, name, host ID, or unique substring. Required when more than one profile is connected." },
+        active: { type: "boolean", description: "Whether to activate the new tab. Defaults to false." }
       }
     }
   },
@@ -202,7 +208,9 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        tabId: { type: "number", description: "The ID of the tab to activate." }
+        tabId: { type: "number", description: "The ID of the tab to activate." },
+        bringToFront: { type: "boolean", description: "Activate the tab. Defaults to true for this explicit focus action." },
+        focusWindow: { type: "boolean", description: "Also focus the Chrome window. Defaults to true." }
       },
       required: ["tabId"]
     }
@@ -422,6 +430,15 @@ const TOOLS = [
   }
 ];
 
+for (const tool of TOOLS) {
+  if (tool.inputSchema.properties.tabId) {
+    tool.inputSchema.properties.tabId.type = "integer";
+    tool.inputSchema.properties.tabId.minimum = 1;
+  }
+}
+module.exports = { TOOLS };
+
+if (require.main === module) {
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
@@ -470,10 +487,27 @@ rl.on("line", async (line) => {
   if (method === "tools/call") {
     const toolName = params?.name;
     const args = params?.arguments || {};
+    const tool = TOOLS.find(t => t.name === toolName);
+    const invalidField = tool && Object.entries(tool.inputSchema.properties).some(([key, schema]) => {
+      const value = args[key];
+      if (value === undefined) return false;
+      if (schema.type === "integer") return !Number.isSafeInteger(value) || value < (schema.minimum || 0);
+      if (schema.type === "array") return !Array.isArray(value);
+      if (schema.enum && !schema.enum.includes(value)) return true;
+      return schema.type !== "object" && typeof value !== schema.type;
+    });
+    if (!args || typeof args !== "object" || Array.isArray(args) || invalidField || tool?.inputSchema.required?.some(k => args[k] === undefined)) {
+      return sendJsonRpc({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: "Missing or invalid tool arguments" }], isError: true } });
+    }
 
     try {
+      if (!TOOLS.some(tool => tool.name === toolName)) throw new Error(`Unknown tool: ${toolName}`);
       let daemonMethod = toolName.replace(/^browser_/, "");
       let daemonArgs = { ...args };
+      if (toolName === "browser_activate_tab") {
+        daemonArgs.bringToFront = args.bringToFront !== false;
+        daemonArgs.focusWindow = args.focusWindow !== false;
+      }
       if (toolName === "browser_record_start") {
         daemonMethod = "start_recording";
       } else if (toolName === "browser_record_stop") {
@@ -482,13 +516,13 @@ rl.on("line", async (line) => {
         daemonMethod = "run_actions";
         daemonArgs.record = true;
       }
-      const timeoutMs = (daemonMethod === "stop_recording" || daemonArgs.record) ? 90000 : 30000;
+      const timeoutMs = (daemonMethod === "stop_recording" || daemonMethod === "run_actions") ? 90000 : 30000;
       const res = await callDaemon(daemonMethod, daemonArgs, timeoutMs);
 
       const content = [];
       if (toolName === "browser_snapshot") {
-        content.push({ type: "text", text: res.tree || JSON.stringify(res, null, 2) });
-      } else if (toolName === "browser_screenshot" && res.dataBase64) {
+        content.push({ type: "text", text: res?.tree || JSON.stringify(res, null, 2) });
+      } else if (toolName === "browser_screenshot" && res?.dataBase64) {
         content.push({
           type: "image",
           data: res.dataBase64,
@@ -504,7 +538,7 @@ rl.on("line", async (line) => {
       return sendJsonRpc({
         jsonrpc: "2.0",
         id,
-        result: { content, isError: false }
+        result: { content, isError: res?.success === false }
       });
     } catch (err) {
       return sendJsonRpc({
@@ -526,3 +560,5 @@ rl.on("line", async (line) => {
     });
   }
 });
+
+}

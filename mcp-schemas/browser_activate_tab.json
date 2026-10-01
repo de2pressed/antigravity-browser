@@ -1,1 +1,25 @@
-{"name":"browser_activate_tab","description":"Switch to and bring a specific tab and its Chrome window into focus.","parameters":{"properties":{"tabId":{"description":"The ID of the tab to activate.","type":"number"}},"required":["tabId"],"type":"object"}}
+{
+  "name": "browser_activate_tab",
+  "description": "Switch to and bring a specific tab and its Chrome window into focus.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "tabId": {
+        "type": "integer",
+        "description": "The ID of the tab to activate.",
+        "minimum": 1
+      },
+      "bringToFront": {
+        "type": "boolean",
+        "description": "Activate the tab. Defaults to true for this explicit focus action."
+      },
+      "focusWindow": {
+        "type": "boolean",
+        "description": "Also focus the Chrome window. Defaults to true."
+      }
+    },
+    "required": [
+      "tabId"
+    ]
+  }
+}

@@ -1,1 +1,25 @@
-{"name":"browser_screenshot","description":"Capture a viewport or full-page screenshot.","parameters":{"properties":{"fullPage":{"description":"Whether to capture beyond the visible viewport.","type":"boolean"},"quality":{"description":"JPEG quality (1-100). Defaults to 80.","type":"number"},"tabId":{"description":"The ID of the target tab.","type":"number"}},"required":["tabId"],"type":"object"}}
+{
+  "name": "browser_screenshot",
+  "description": "Capture a viewport or full-page screenshot.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "tabId": {
+        "type": "integer",
+        "description": "The ID of the target tab.",
+        "minimum": 1
+      },
+      "quality": {
+        "type": "number",
+        "description": "JPEG quality (1-100). Defaults to 80."
+      },
+      "fullPage": {
+        "type": "boolean",
+        "description": "Whether to capture beyond the visible viewport."
+      }
+    },
+    "required": [
+      "tabId"
+    ]
+  }
+}

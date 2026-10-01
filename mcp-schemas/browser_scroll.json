@@ -1,1 +1,25 @@
-{"name":"browser_scroll","description":"Scroll the page smoothly via mouse wheel events.","parameters":{"properties":{"deltaX":{"description":"Horizontal scroll amount in pixels. Defaults to 0.","type":"number"},"deltaY":{"description":"Vertical scroll amount in pixels (positive down, negative up). Defaults to 400.","type":"number"},"tabId":{"description":"The ID of the target tab.","type":"number"}},"required":["tabId"],"type":"object"}}
+{
+  "name": "browser_scroll",
+  "description": "Scroll the page smoothly via mouse wheel events.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "tabId": {
+        "type": "integer",
+        "description": "The ID of the target tab.",
+        "minimum": 1
+      },
+      "deltaY": {
+        "type": "number",
+        "description": "Vertical scroll amount in pixels (positive down, negative up). Defaults to 400."
+      },
+      "deltaX": {
+        "type": "number",
+        "description": "Horizontal scroll amount in pixels. Defaults to 0."
+      }
+    },
+    "required": [
+      "tabId"
+    ]
+  }
+}

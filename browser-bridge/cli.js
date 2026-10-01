@@ -3,10 +3,22 @@
 const net = require("net");
 const fs = require("fs");
 
-const SOCKET_PATH = "/tmp/antigravity-browser-bridge.sock";
+const SOCKET_PATH = process.env.ANTIGRAVITY_SOCKET_PATH || "/tmp/antigravity-browser-bridge.sock";
 
-function callDaemon(method, params = {}, timeoutMs = 25000) {
-  if (process.argv.includes("--force") || process.argv.includes("--allow-existing") || process.argv.includes("--allow-existing-tab")) {
+function hasSafetyOverride(args) {
+  const valueCommands = new Set(["type", "paste", "eval", "evaluate", "batch", "run-actions", "record", "fc", "find-and-click", "navigate", "nav", "press-key", "key"]);
+  const start = valueCommands.has(args[0]) ? 3 : 2;
+  const valueOptions = new Set(["--uid", "--html", "--x", "--y", "--button", "--output", "-o", "--distance", "--direction", "--profile", "--search"]);
+  for (let i = start; i < args.length; i++) {
+    if (valueOptions.has(args[i])) { i++; continue; }
+    if (["--force", "--allow-existing", "--allow-existing-tab"].includes(args[i])) return true;
+  }
+  return false;
+}
+
+function callDaemon(method, params = {}, timeoutMs = 35000) {
+  if ("tabId" in params && (!Number.isSafeInteger(params.tabId) || params.tabId <= 0)) return Promise.reject(new Error("tabId must be a positive integer."));
+  if (hasSafetyOverride(process.argv.slice(2))) {
     params.allowExistingTab = true;
   }
   return new Promise((resolve, reject) => {
@@ -30,6 +42,7 @@ function callDaemon(method, params = {}, timeoutMs = 25000) {
       client.write(JSON.stringify({ id: reqId, method, params }) + "\n");
     });
 
+    client.setEncoding("utf8");
     let buffer = "";
     client.on("data", (chunk) => {
       buffer += chunk.toString("utf8");
@@ -45,8 +58,8 @@ function callDaemon(method, params = {}, timeoutMs = 25000) {
                 resolved = true;
                 clearTimeout(timer);
                 client.end();
-                if (resp.error) {
-                  reject(new Error(resp.error));
+                if (resp.error || resp.result?.success === false) {
+                  reject(new Error(resp.error || resp.result.error || JSON.stringify(resp.result)));
                 } else {
                   resolve(resp.result);
                 }
@@ -57,6 +70,13 @@ function callDaemon(method, params = {}, timeoutMs = 25000) {
       }
     });
 
+    client.on("close", () => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timer);
+        reject(new Error("Bridge disconnected before responding; action outcome may be unknown."));
+      }
+    });
     client.on("error", (err) => {
       if (!resolved) {
         resolved = true;
@@ -79,6 +99,7 @@ Usage:
   agy-browser claim <tabId>
   agy-browser new [--profile <email|hint>] [--foreground] <url>
   agy-browser activate <tabId> [--bring-to-front]
+  agy-browser navigate <tabId> <url>
   agy-browser snapshot <tabId>
   agy-browser click <tabId> <uid> [--x <x> --y <y>] [--dblclick] [--right]
   agy-browser fc <tabId> <selector>
@@ -126,7 +147,7 @@ Usage:
       }
       console.log(JSON.stringify(res, null, 2));
     } else if (cmd === "claim") {
-      const tabId = parseInt(args[1], 10);
+      const tabId = Number(args[1]);
       const res = await callDaemon("claim_tab", { tabId, allowExistingTab: true });
       console.log(JSON.stringify(res, null, 2));
     } else if (cmd === "new-tab" || cmd === "new") {
@@ -151,15 +172,19 @@ Usage:
       const res = await callDaemon("close_agent_tabs");
       console.log(JSON.stringify(res, null, 2));
     } else if (cmd === "activate") {
-      const tabId = parseInt(args[1], 10);
-      const res = await callDaemon("activate_tab", { tabId });
+      const tabId = Number(args[1]);
+      const res = await callDaemon("activate_tab", { tabId, bringToFront: true, focusWindow: args.includes("--bring-to-front") });
       console.log(JSON.stringify(res, null, 2));
+    } else if (cmd === "navigate" || cmd === "nav") {
+      const tabId = Number(args[1]);
+      if (!args[2]) throw new Error("Usage: agy-browser navigate <tabId> <url>");
+      console.log(JSON.stringify(await callDaemon("navigate", { tabId, url: args[2] }), null, 2));
     } else if (cmd === "snapshot" || cmd === "snap") {
-      const tabId = parseInt(args[1], 10);
+      const tabId = Number(args[1]);
       const res = await callDaemon("snapshot", { tabId });
       console.log(res.tree || JSON.stringify(res, null, 2));
     } else if (cmd === "click") {
-      const tabId = parseInt(args[1], 10);
+      const tabId = Number(args[1]);
       let uid = null;
       let x = undefined;
       let y = undefined;
@@ -186,7 +211,7 @@ Usage:
       const res = await callDaemon("click", { tabId, uid, x, y, dblClick, button });
       console.log(JSON.stringify(res, null, 2));
     } else if (cmd === "hover") {
-      const tabId = parseInt(args[1], 10);
+      const tabId = Number(args[1]);
       let uid = null;
       let x = undefined;
       let y = undefined;
@@ -204,7 +229,7 @@ Usage:
       const res = await callDaemon("hover", { tabId, uid, x, y });
       console.log(JSON.stringify(res, null, 2));
     } else if (cmd === "press-key" || cmd === "key") {
-      const tabId = parseInt(args[1], 10);
+      const tabId = Number(args[1]);
       const key = args[2] || "Enter";
       let ctrl = false, alt = false, shift = false, meta = false;
       for (let i = 3; i < args.length; i++) {
@@ -216,7 +241,7 @@ Usage:
       const res = await callDaemon("press_key", { tabId, key, ctrl, alt, shift, meta });
       console.log(JSON.stringify(res, null, 2));
     } else if (cmd === "screenshot" || cmd === "shot") {
-      const tabId = parseInt(args[1], 10);
+      const tabId = Number(args[1]);
       let outputPath = null;
       for (let i = 2; i < args.length; i++) {
         if ((args[i] === "-o" || args[i] === "--output") && args[i + 1]) {
@@ -232,7 +257,7 @@ Usage:
         console.log(`Captured screenshot (${res.format}, ${res.dataBase64?.length || 0} bytes base64)`);
       }
     } else if (cmd === "scroll") {
-      const tabId = parseInt(args[1], 10);
+      const tabId = Number(args[1]);
       let deltaY = 400;
       let deltaX = 0;
       for (let i = 2; i < args.length; i++) {
@@ -251,12 +276,12 @@ Usage:
       const res = await callDaemon("scroll", { tabId, deltaY, deltaX });
       console.log(JSON.stringify(res, null, 2));
     } else if (cmd === "evaluate" || cmd === "eval") {
-      const tabId = parseInt(args[1], 10);
-      const expression = args.slice(2).join(" ");
+      const tabId = Number(args[1]);
+      const expression = args[2];
       const res = await callDaemon("evaluate", { tabId, expression });
       console.log(JSON.stringify(res, null, 2));
     } else if (cmd === "type") {
-      const tabId = parseInt(args[1], 10);
+      const tabId = Number(args[1]);
       const text = args[2];
       let uid = null;
       let clear = false;
@@ -272,12 +297,12 @@ Usage:
       const res = await callDaemon("type", { tabId, text, uid, clear, pressEnter });
       console.log(JSON.stringify(res, null, 2));
     } else if (cmd === "find-and-click" || cmd === "fc") {
-      const tabId = parseInt(args[1], 10);
+      const tabId = Number(args[1]);
       const selector = args[2];
       const res = await callDaemon("find_and_click", { tabId, selector });
       console.log(JSON.stringify(res, null, 2));
     } else if (cmd === "paste") {
-      const tabId = parseInt(args[1], 10);
+      const tabId = Number(args[1]);
       let text = "";
       let html = "";
       for (let i = 2; i < args.length; i++) {
@@ -295,13 +320,13 @@ Usage:
       const res = await callDaemon("paste", { tabId, text, html });
       console.log(JSON.stringify(res, null, 2));
     } else if (cmd === "run-actions" || cmd === "batch") {
-      const tabId = parseInt(args[1], 10);
-      const actionsJson = args.slice(2).join(" ");
+      const tabId = Number(args[1]);
+      const actionsJson = args[2];
       const actions = JSON.parse(actionsJson);
-      const res = await callDaemon("run_actions", { tabId, actions });
+      const res = await callDaemon("run_actions", { tabId, actions }, 95000);
       console.log(JSON.stringify(res, null, 2));
     } else if (cmd === "record-start") {
-      const tabId = parseInt(args[1], 10);
+      const tabId = Number(args[1]);
       let outputPath = null;
       for (let i = 2; i < args.length; i++) {
         if ((args[i] === "-o" || args[i] === "--output") && args[i + 1]) {
@@ -312,7 +337,7 @@ Usage:
       const res = await callDaemon("start_recording", { tabId, outputPath });
       console.log(JSON.stringify(res, null, 2));
     } else if (cmd === "record-stop") {
-      const tabId = parseInt(args[1], 10);
+      const tabId = Number(args[1]);
       let outputPath = null;
       for (let i = 2; i < args.length; i++) {
         if ((args[i] === "-o" || args[i] === "--output") && args[i + 1]) {
@@ -320,10 +345,10 @@ Usage:
           i++;
         }
       }
-      const res = await callDaemon("stop_recording", { tabId, outputPath }, 60000);
+      const res = await callDaemon("stop_recording", { tabId, outputPath }, 95000);
       console.log(JSON.stringify(res, null, 2));
     } else if (cmd === "record") {
-      const tabId = parseInt(args[1], 10);
+      const tabId = Number(args[1]);
       let outputPath = null;
       let actionsJson = null;
       for (let i = 2; i < args.length; i++) {
@@ -335,10 +360,10 @@ Usage:
         }
       }
       const actions = actionsJson ? JSON.parse(actionsJson) : [];
-      const res = await callDaemon("run_actions", { tabId, actions, record: true, outputPath }, 90000);
+      const res = await callDaemon("run_actions", { tabId, actions, record: true, outputPath }, 95000);
       console.log(JSON.stringify(res, null, 2));
     } else if (cmd === "close") {
-      const tabId = parseInt(args[1], 10);
+      const tabId = Number(args[1]);
       const res = await callDaemon("close_tab", { tabId });
       console.log(JSON.stringify(res, null, 2));
     } else if (cmd === "reload-extension" || cmd === "reload") {

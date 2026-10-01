@@ -1,1 +1,21 @@
-{"name":"browser_new_tab","description":"Open a URL in a new tab in an existing Chrome profile window without launching CLI processes. Supports targeting 'devops@qtloads.com' (or 'devops') or 'jayantdahiya1204@gmail.com' (or 'default').","parameters":{"properties":{"active":{"description":"Whether to activate the new tab. Defaults to true.","type":"boolean"},"profile":{"description":"Profile to open tab in: 'devops@qtloads.com', 'devops', 'qtloads', 'jayantdahiya1204@gmail.com', or 'default'.","type":"string"},"url":{"description":"The destination URL. Defaults to about:blank.","type":"string"}},"type":"object"}}
+{
+  "name": "browser_new_tab",
+  "description": "Open a URL in a new tab in an existing Chrome profile window without launching CLI processes. Specify a connected profile email, exact name, host ID, or unique substring when multiple profiles are connected.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "url": {
+        "type": "string",
+        "description": "The destination URL. Defaults to about:blank."
+      },
+      "profile": {
+        "type": "string",
+        "description": "Connected profile email, name, host ID, or unique substring. Required when more than one profile is connected."
+      },
+      "active": {
+        "type": "boolean",
+        "description": "Whether to activate the new tab. Defaults to false."
+      }
+    }
+  }
+}

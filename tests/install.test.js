@@ -1,0 +1,10 @@
+const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const path=require('node:path');const os=require('node:os');const {spawn}=require('node:child_process');const {once}=require('node:events');
+test('installer supports a custom clone location with spaces and backs up existing skills',async t=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'agy-install-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));const repo=path.join(dir,'custom clone');fs.cpSync(path.join(__dirname,'..'),repo,{recursive:true});const home=path.join(dir,'home');const bin=path.join(dir,'bin');fs.mkdirSync(bin);for(const f of ['systemctl','loginctl'])fs.writeFileSync(path.join(bin,f),'#!/bin/sh\nexit 0\n',{mode:0o755});
+ const previous=path.join(home,'.gemini/config/skills/agent-browser');fs.mkdirSync(previous,{recursive:true});fs.writeFileSync(path.join(previous,'custom.txt'),'preserve me');
+ const child=spawn('/bin/bash',[path.join(repo,'install.sh')],{env:{...process.env,HOME:home,PATH:bin+':'+process.env.PATH},stdio:'pipe'});let error='';child.stderr.on('data',b=>error+=b);assert.equal((await once(child,'exit'))[0],0,error);
+ const manifest=JSON.parse(fs.readFileSync(path.join(home,'.config/google-chrome/NativeMessagingHosts/com.google.antigravity.browser.json')));assert.equal(manifest.path,path.join(repo,'browser-bridge/host-launcher.sh'));
+ const service=fs.readFileSync(path.join(home,'.config/systemd/user/antigravity-browser-bridge.service'),'utf8');assert.equal(service.includes(repo),true);assert.equal(service.includes('/home/jayant/.gemini'),false);
+ const skills=path.join(home,'.gemini/config/skills');const backup=fs.readdirSync(skills).find(f=>f.startsWith('agent-browser.backup.'));assert.equal(fs.readFileSync(path.join(skills,backup,'custom.txt'),'utf8'),'preserve me');
+ const cli=spawn(path.join(home,'.local/bin/agy-browser'),['--help'],{env:{...process.env,HOME:home},stdio:'pipe'});let output='';cli.stdout.on('data',b=>output+=b);assert.equal((await once(cli,'exit'))[0],0);assert.match(output,/Antigravity Browser Bridge CLI/);
+});

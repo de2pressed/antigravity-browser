@@ -6,7 +6,12 @@ let reconnectTimer = null;
 let profileIdentity = { email: "unknown", name: "default" };
 
 const attachedTabs = new Set();
-const agentOwnedTabs = new Set();
+const agentOwnedTabs = new Set(); // Created + explicitly claimed: permission to interact.
+const agentCreatedTabs = new Set(); // Only these may be removed by bulk cleanup.
+const debuggerAttaching = new Map();
+const requestQueues = new Map();
+const snapshotSessionId = crypto.randomUUID();
+let snapshotGeneration = 0;
 const tabSnapshots = new Map(); // tabId -> { elementMap, time }
 const cursorStates = new Map(); // tabId -> { cursor, isVisible, sessionId, turnId }
 const cursorTimers = new Map(); // tabId -> setTimeout timer
@@ -17,9 +22,12 @@ const pendingRecordingFinalizations = new Map(); // recordingId -> { resolve, ti
 async function loadAgentOwnedTabs() {
   try {
     if (chrome.storage && chrome.storage.session) {
-      const data = await chrome.storage.session.get("agentOwnedTabs");
+      const data = await chrome.storage.session.get(["agentOwnedTabs", "agentCreatedTabs"]);
       if (Array.isArray(data.agentOwnedTabs)) {
-        data.agentOwnedTabs.forEach(id => agentOwnedTabs.add(id));
+        const liveIds = new Set((await chrome.tabs.query({})).map(t => t.id));
+        data.agentOwnedTabs.filter(id => liveIds.has(id)).forEach(id => agentOwnedTabs.add(id));
+        // Legacy ownership cannot prove a tab was created; preserve it on cleanup.
+        (data.agentCreatedTabs || []).filter(id => liveIds.has(id)).forEach(id => agentCreatedTabs.add(id));
       }
     }
   } catch (e) {
@@ -30,7 +38,7 @@ async function loadAgentOwnedTabs() {
 async function saveAgentOwnedTabs() {
   try {
     if (chrome.storage && chrome.storage.session) {
-      await chrome.storage.session.set({ agentOwnedTabs: Array.from(agentOwnedTabs) });
+      await chrome.storage.session.set({ agentOwnedTabs: Array.from(agentOwnedTabs), agentCreatedTabs: Array.from(agentCreatedTabs) });
     }
   } catch (e) {
     console.warn("[Antigravity Bridge] Could not save agentOwnedTabs to session storage:", e);
@@ -55,10 +63,11 @@ async function cleanupNonAgentOverlays() {
   } catch (e) {}
 }
 
-loadAgentOwnedTabs().then(() => cleanupNonAgentOverlays());
+const ownershipReady = loadAgentOwnedTabs();
+ownershipReady.then(() => cleanupNonAgentOverlays());
 
 chrome.runtime.onInstalled.addListener(() => {
-  cleanupNonAgentOverlays();
+  ownershipReady.then(() => cleanupNonAgentOverlays());
 });
 
 // 1. Native Messaging Lifecycle
@@ -141,53 +150,19 @@ async function detectProfile() {
   // Strategy 2: Persistent profile storage
   if (email === "unknown") {
     try {
-      const stored = await chrome.storage.local.get("profileEmail");
-      if (stored && stored.profileEmail) {
+      const stored = await chrome.storage.local.get(["profileEmail", "profileIdentitySource"]);
+      if (stored && stored.profileEmail && ["chrome-identity", "native-preferences"].includes(stored.profileIdentitySource)) {
         email = stored.profileEmail;
       }
     } catch (e) {}
   }
 
-  // Strategy 3: Google account cookies
-  if (email === "unknown") {
-    try {
-      const cookies = await chrome.cookies.getAll({ domain: "google.com" });
-      const authCookie = cookies.find(c => c.name === "ACCOUNT_CHOOSER" || c.name === "OSID");
-      if (authCookie && authCookie.value) {
-        const decoded = decodeURIComponent(authCookie.value);
-        const match = decoded.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
-        if (match) email = match[1];
-      }
-    } catch (e) {}
-  }
-
-  // Strategy 4: Active tab URLs & titles
-  if (email === "unknown") {
-    try {
-      const tabs = await chrome.tabs.query({});
-      for (const t of tabs) {
-        if (t.title && t.title.includes("@qtloads.com")) {
-          email = "devops@qtloads.com";
-          break;
-        }
-        if (t.title && t.title.includes("jayantdahiya1204@gmail.com")) {
-          email = "jayantdahiya1204@gmail.com";
-          break;
-        }
-        if (t.url && t.url.includes("mail.google.com/mail/u/")) {
-          const match = t.title.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
-          if (match) {
-            email = match[1];
-            break;
-          }
-        }
-      }
-    } catch (e) {}
-  }
+  // Page titles and Google cookies identify page accounts, not the Chrome profile.
+  // The native host may provide profile Preferences identity via set_profile.
 
   if (email !== "unknown") {
     try {
-      await chrome.storage.local.set({ profileEmail: email });
+      await chrome.storage.local.set({ profileEmail: email, profileIdentitySource: "chrome-identity" });
     } catch (e) {}
   }
 
@@ -279,6 +254,8 @@ async function updateCursor(tabId, x, y, options = {}) {
 
 // Automatically restore persistent cursor on agent-owned tabs upon navigation or reload
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.status === "loading" || changeInfo.url) tabSnapshots.delete(tabId);
+  await ownershipReady;
   if (changeInfo.status === "complete" && agentOwnedTabs.has(tabId)) {
     if (tab.url && !tab.url.startsWith("chrome://") && !tab.url.startsWith("chrome-extension://")) {
       await publishCursorState(tabId, { isVisible: true });
@@ -289,6 +266,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 // Clean up state when tab is closed
 chrome.tabs.onRemoved.addListener((tabId) => {
   attachedTabs.delete(tabId);
+  agentCreatedTabs.delete(tabId);
   tabSnapshots.delete(tabId);
   cursorStates.delete(tabId);
   if (cursorTimers.has(tabId)) {
@@ -303,6 +281,10 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 
 // Handle content script messages
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "GET_BRIDGE_STATUS" && !sender.tab && sender.id === chrome.runtime.id) {
+    sendResponse({ nativeConnected: !!nativePort, attachedTabCount: attachedTabs.size, profileEmail: profileIdentity.email });
+    return false;
+  }
   if (message?.type === "GET_AGENT_CURSOR_STATE") {
     const tabId = sender.tab?.id;
     if (!tabId || !agentOwnedTabs.has(tabId)) {
@@ -321,11 +303,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // 4. RPC Request Dispatcher
-async function handleRequest(msg) {
+function handleRequest(msg) {
+  if (!msg || typeof msg !== "object") return;
+  const tabId = msg.params?.tabId;
+  if (tabId === undefined) return dispatchRequest(msg);
+  const previous = requestQueues.get(tabId) || Promise.resolve();
+  const next = previous.catch(() => {}).then(() => dispatchRequest(msg));
+  requestQueues.set(tabId, next);
+  next.finally(() => { if (requestQueues.get(tabId) === next) requestQueues.delete(tabId); });
+  return next;
+}
+
+async function dispatchRequest(msg) {
   const { id, method, params = {} } = msg;
-  if (!id) return;
+  if (id === undefined || id === null) return;
 
   try {
+    await ownershipReady;
+    if (!params || typeof params !== "object" || Array.isArray(params)) throw new Error("params must be an object");
+    const withoutTab = new Set(["ping", "get_profile", "set_profile", "reload_extension", "close_agent_tabs", "list_tabs", "new_tab"]);
+    if (!withoutTab.has(method) && (!Number.isSafeInteger(params.tabId) || params.tabId <= 0)) throw new Error("tabId must be a positive integer");
     let result = null;
     switch (method) {
       case "ping":
@@ -339,12 +336,13 @@ async function handleRequest(msg) {
         if (params.profile && params.profile.email && params.profile.email !== "unknown") {
           profileIdentity = { ...profileIdentity, ...params.profile };
           try {
-            await chrome.storage.local.set({ profileEmail: profileIdentity.email });
+            await chrome.storage.local.set({ profileEmail: profileIdentity.email, profileIdentitySource: "native-preferences" });
           } catch (e) {}
         }
         result = profileIdentity;
         break;
       case "reload_extension":
+        if (activeRecordings.size || pendingRecordingFinalizations.size) throw new Error("Cannot reload extension while a recording is active or finalizing.");
         console.log("[Antigravity Bridge] Self-reload requested by bridge host.");
         sendToHost({ id, result: { reloading: true } });
         setTimeout(() => {
@@ -452,10 +450,12 @@ async function handleRequest(msg) {
 
 // Safety: Prevent hijacking existing user tabs without explicit instruction
 async function checkTabSafety(params = {}) {
-  if (!params.tabId) return;
-  const tabId = parseInt(params.tabId, 10);
+  await ownershipReady;
+  const tabId = params.tabId;
+  if (!Number.isSafeInteger(tabId) || tabId <= 0) throw new Error("tabId must be a positive integer");
   if (agentOwnedTabs.has(tabId)) return;
   if (params.allowExistingTab === true || params.force === true) {
+    await chrome.tabs.get(tabId);
     agentOwnedTabs.add(tabId); // Explicitly claimed
     await saveAgentOwnedTabs();
     return;
@@ -495,7 +495,8 @@ async function listTabs() {
     status: t.status,
     favIconUrl: t.favIconUrl || "",
     profileEmail: profileIdentity.email,
-    agentOwned: agentOwnedTabs.has(t.id)
+    agentOwned: agentOwnedTabs.has(t.id),
+    agentCreated: agentCreatedTabs.has(t.id)
   }));
 }
 
@@ -508,6 +509,7 @@ async function newTab(params = {}) {
     active: shouldBeActive
   });
   agentOwnedTabs.add(tab.id);
+  agentCreatedTabs.add(tab.id);
   await saveAgentOwnedTabs();
   if (params.waitForLoad !== false) {
     await waitForTabComplete(tab.id, params.timeout || 25000);
@@ -548,6 +550,7 @@ async function closeTab(params) {
   const tabId = parseInt(params.tabId, 10);
   await chrome.tabs.remove(tabId);
   attachedTabs.delete(tabId);
+  agentCreatedTabs.delete(tabId);
   tabSnapshots.delete(tabId);
   cursorStates.delete(tabId);
   if (cursorTimers.has(tabId)) {
@@ -560,8 +563,10 @@ async function closeTab(params) {
 }
 
 async function closeAgentTabs() {
+  await ownershipReady;
   const closed = [];
-  for (const tabId of Array.from(agentOwnedTabs)) {
+  const failedTabs = [];
+  for (const tabId of Array.from(agentCreatedTabs)) {
     try {
       await chrome.tabs.remove(tabId);
       attachedTabs.delete(tabId);
@@ -572,11 +577,12 @@ async function closeAgentTabs() {
         cursorTimers.delete(tabId);
       }
       agentOwnedTabs.delete(tabId);
+      agentCreatedTabs.delete(tabId);
       closed.push(tabId);
-    } catch (e) {}
+    } catch (e) { failedTabs.push({ tabId, error: e.message }); }
   }
   await saveAgentOwnedTabs();
-  return { success: true, closedTabs: closed };
+  return { success: failedTabs.length === 0, closedTabs: closed, failedTabs };
 }
 
 async function navigateTab(params) {
@@ -620,36 +626,23 @@ async function goForward(params) {
 }
 
 function waitForTabComplete(tabId, timeoutMs = 25000) {
-  return new Promise(async (resolve) => {
-    let resolved = false;
-
-    // Fast-path: check if tab is already complete to avoid 25-second hang
-    try {
-      const initial = await chrome.tabs.get(tabId);
-      if (initial && initial.status === "complete") {
-        return resolve();
-      }
-    } catch (e) {}
-
-    const timer = setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        chrome.tabs.onUpdated.removeListener(listener);
-        resolve();
-      }
-    }, timeoutMs);
-
-    function listener(updatedId, info) {
-      if (updatedId === tabId && info.status === "complete") {
-        if (!resolved) {
-          resolved = true;
-          clearTimeout(timer);
-          chrome.tabs.onUpdated.removeListener(listener);
-          resolve();
-        }
-      }
-    }
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      chrome.tabs.onUpdated.removeListener(listener);
+      chrome.tabs.onRemoved.removeListener(removed);
+      if (err) reject(err); else resolve();
+    };
+    function listener(id, info) { if (id === tabId && info.status === "complete") finish(); }
+    function removed(id) { if (id === tabId) finish(new Error(`Tab ${tabId} closed during navigation`)); }
+    const timer = setTimeout(() => finish(new Error(`Tab ${tabId} did not finish loading within ${timeoutMs}ms`)), timeoutMs);
+    // Subscribe before the asynchronous state check, so completion cannot be missed.
     chrome.tabs.onUpdated.addListener(listener);
+    chrome.tabs.onRemoved.addListener(removed);
+    chrome.tabs.get(tabId).then(tab => { if (tab.status === "complete") finish(); }, finish);
   });
 }
 
@@ -657,7 +650,7 @@ function waitForTabComplete(tabId, timeoutMs = 25000) {
 // Single global listener for modal dialogs to prevent deadlocks and avoid listener leaks
 chrome.debugger.onEvent.addListener((source, method, eventParams) => {
   if (method === "Page.javascriptDialogOpening" && source?.tabId) {
-    cdpSend(source.tabId, "Page.handleJavaScriptDialog", { accept: true }).catch(() => {});
+    cdpSend(source.tabId, "Page.handleJavaScriptDialog", { accept: false }).catch(() => {});
   }
   if (method === "Page.screencastFrame" && source?.tabId) {
     const rec = activeRecordings.get(source.tabId);
@@ -678,17 +671,20 @@ chrome.debugger.onEvent.addListener((source, method, eventParams) => {
 
 async function ensureDebugger(tabId) {
   if (attachedTabs.has(tabId)) return;
+  if (debuggerAttaching.has(tabId)) return debuggerAttaching.get(tabId);
+  const attaching = attachDebugger(tabId);
+  debuggerAttaching.set(tabId, attaching);
+  try { await attaching; } finally { debuggerAttaching.delete(tabId); }
+}
+
+async function attachDebugger(tabId) {
+  if (attachedTabs.has(tabId)) return;
 
   await new Promise((resolve, reject) => {
     chrome.debugger.attach({ tabId }, "1.3", () => {
       if (chrome.runtime.lastError) {
-        if (chrome.runtime.lastError.message?.includes("already attached")) {
-          attachedTabs.add(tabId);
-          return resolve();
-        }
         return reject(new Error(chrome.runtime.lastError.message));
       }
-      attachedTabs.add(tabId);
       chrome.action.setBadgeBackgroundColor({ color: "#2563eb", tabId });
       chrome.action.setBadgeText({ text: "AI", tabId });
       resolve();
@@ -696,12 +692,18 @@ async function ensureDebugger(tabId) {
   });
 
   // Enable core CDP domains
-  await cdpSend(tabId, "Page.enable");
-  await cdpSend(tabId, "DOM.enable");
+  try {
+    await cdpSend(tabId, "Page.enable");
+    await cdpSend(tabId, "DOM.enable");
+  } catch (err) {
+    await chrome.debugger.detach({ tabId }).catch(() => {});
+    throw err;
+  }
   await cdpSend(tabId, "Accessibility.enable").catch(() => {});
   await cdpSend(tabId, "Runtime.enable").catch(() => {});
   // Bypass background tab throttling so WebSockets, timers, and React hydration run at full speed
   await cdpSend(tabId, "Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => {});
+  attachedTabs.add(tabId);
 }
 
 function cdpSend(tabId, method, params = {}) {
@@ -737,6 +739,7 @@ async function takeSnapshot(params) {
   const axNodes = axData.nodes || [];
   const tab = await chrome.tabs.get(tabId);
 
+  const generation = `${snapshotSessionId}-${++snapshotGeneration}`;
   let uidCounter = 1;
   const elementMap = new Map();
   const lines = [`## Page Snapshot [tabId=${tabId}] "${tab.title}" (${tab.url})`];
@@ -745,7 +748,7 @@ async function takeSnapshot(params) {
     if (node.ignored) continue;
     const role = node.role?.value || "generic";
     const name = node.name?.value?.trim() || "";
-    const value = node.value?.value?.trim() || "";
+    const value = String(node.value?.value ?? "").trim();
     const description = node.description?.value?.trim() || "";
 
     // Exclude agent cursor overlay labels from page snapshot
@@ -764,7 +767,7 @@ async function takeSnapshot(params) {
 
     if (!isInteractive && !isInformational && !name && !value) continue;
 
-    const uid = `${tabId}_${uidCounter++}`;
+    const uid = `${tabId}_${generation}_${uidCounter++}`;
     elementMap.set(uid, {
       backendDOMNodeId: node.backendDOMNodeId,
       role,
@@ -794,6 +797,7 @@ async function takeSnapshot(params) {
 // 8. Hardware Mouse Interactions with Auto-Scroll & Visual Cursor
 async function resolveElementCoords(tabId, uid, explicitX, explicitY) {
   if (explicitX !== undefined && explicitY !== undefined) {
+    if (!Number.isFinite(explicitX) || !Number.isFinite(explicitY)) throw new Error("Coordinates must be finite numbers");
     return { x: Math.round(explicitX), y: Math.round(explicitY) };
   }
 
@@ -836,6 +840,7 @@ async function resolveElementCoords(tabId, uid, explicitX, explicitY) {
           }`,
           returnByValue: true
         });
+        await cdpSend(tabId, "Runtime.releaseObject", { objectId: object.objectId }).catch(() => {});
         const val = evalRes?.result?.value;
         if (val && (val.x > 0 || val.y > 0 || val.w > 0)) {
           return { x: val.x, y: val.y };
@@ -860,20 +865,10 @@ async function clickElement(params) {
 
   // Hardware mouse click via CDP
   await cdpSend(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
-  await cdpSend(tabId, "Input.dispatchMouseEvent", {
-    type: "mousePressed",
-    button,
-    clickCount,
-    x,
-    y
-  });
-  await cdpSend(tabId, "Input.dispatchMouseEvent", {
-    type: "mouseReleased",
-    button,
-    clickCount,
-    x,
-    y
-  });
+  for (let count = 1; count <= clickCount; count++) {
+    await cdpSend(tabId, "Input.dispatchMouseEvent", { type: "mousePressed", button, clickCount: count, x, y });
+    await cdpSend(tabId, "Input.dispatchMouseEvent", { type: "mouseReleased", button, clickCount: count, x, y });
+  }
 
   return {
     success: true,
@@ -901,7 +896,8 @@ async function dragElement(params) {
 
   const from = await resolveElementCoords(tabId, params.fromUid, params.fromX, params.fromY);
   const to = await resolveElementCoords(tabId, params.toUid, params.toX, params.toY);
-  const steps = params.steps || 5;
+  const steps = params.steps ?? 10;
+  if (!Number.isInteger(steps) || steps < 1 || steps > 1000) throw new Error("Drag steps must be an integer from 1 to 1000");
 
   updateCursor(tabId, from.x, from.y, { animate: false }).catch(() => {});
   await cdpSend(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x: from.x, y: from.y });
@@ -911,7 +907,7 @@ async function dragElement(params) {
     const curX = Math.round(from.x + ((to.x - from.x) * (i / steps)));
     const curY = Math.round(from.y + ((to.y - from.y) * (i / steps)));
     updateCursor(tabId, curX, curY, { animate: false }).catch(() => {});
-    await cdpSend(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x: curX, y: curY });
+    await cdpSend(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", button: "left", buttons: 1, x: curX, y: curY });
   }
 
   await cdpSend(tabId, "Input.dispatchMouseEvent", { type: "mouseReleased", button: "left", clickCount: 1, x: to.x, y: to.y });
@@ -938,7 +934,8 @@ async function typeText(params) {
     await clickElement(params);
   }
 
-  const text = params.text || "";
+  if (typeof params.text !== "string") throw new Error("text must be a string");
+  const text = params.text;
 
   if (params.clear) {
     // Ctrl+A / Cmd+A
@@ -1018,10 +1015,14 @@ async function pressKey(params) {
     windowsVirtualKeyCode: info.vk,
     text: info.text,
     unmodifiedText: info.text,
-    key,
+    key: key === "Space" ? " " : key,
     code,
     modifiers
   };
+  if (params.ctrl || params.alt || params.meta) {
+    delete keyDownPayload.text;
+    delete keyDownPayload.unmodifiedText;
+  }
   if (commands.length > 0) {
     keyDownPayload.commands = commands;
   }
@@ -1031,9 +1032,7 @@ async function pressKey(params) {
   await cdpSend(tabId, "Input.dispatchKeyEvent", {
     type: "keyUp",
     windowsVirtualKeyCode: info.vk,
-    text: info.text,
-    unmodifiedText: info.text,
-    key,
+    key: key === "Space" ? " " : key,
     code,
     modifiers
   });
@@ -1050,8 +1049,8 @@ async function scrollTab(params) {
 
   await cdpSend(tabId, "Input.dispatchMouseEvent", {
     type: "mouseWheel",
-    x: params.x || 500,
-    y: params.y || 500,
+    x: params.x ?? 500,
+    y: params.y ?? 500,
     deltaX,
     deltaY
   });
@@ -1064,13 +1063,16 @@ async function captureScreenshot(params) {
   await ensureDebugger(tabId);
 
   const format = params.format || "jpeg";
-  const quality = params.quality || 80;
+  const quality = params.quality ?? 80;
 
-  const res = await cdpSend(tabId, "Page.captureScreenshot", {
-    format,
-    quality,
-    captureBeyondViewport: Boolean(params.fullPage)
-  });
+  const capture = { format, captureBeyondViewport: Boolean(params.fullPage) };
+  if (format === "jpeg" || format === "webp") capture.quality = quality;
+  if (params.fullPage) {
+    const metrics = await cdpSend(tabId, "Page.getLayoutMetrics");
+    const size = metrics.cssContentSize || metrics.contentSize;
+    capture.clip = { x: 0, y: 0, width: size.width, height: size.height, scale: 1 };
+  }
+  const res = await cdpSend(tabId, "Page.captureScreenshot", capture);
 
   return {
     tabId,
@@ -1089,7 +1091,7 @@ async function startRecording(params) {
   }
 
   const recordingId = params.recordingId || `rec_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-  const defaultDir = "/home/jayant/.gemini/antigravity/brain/6ced2199-4b2e-4da6-bada-d0b5930b3fae";
+  const defaultDir = "/tmp/antigravity-recordings";
   const outputPath = params.outputPath || `${defaultDir}/recording_tab_${tabId}_${Date.now()}.mp4`;
 
   const rec = {
@@ -1108,6 +1110,7 @@ async function startRecording(params) {
     outputPath
   });
 
+  try {
   await cdpSend(tabId, "Page.startScreencast", {
     format: "jpeg",
     quality: params.quality || 85,
@@ -1115,6 +1118,11 @@ async function startRecording(params) {
     maxHeight: params.maxHeight || 1080,
     everyNthFrame: 1
   });
+  } catch (err) {
+    activeRecordings.delete(tabId);
+    sendToHost({ type: "recording_cancel", recordingId });
+    throw err;
+  }
 
   return { success: true, tabId, recordingId, outputPath, recording: true };
 }
@@ -1139,7 +1147,7 @@ async function stopRecording(params) {
     const timer = setTimeout(() => {
       pendingRecordingFinalizations.delete(rec.recordingId);
       resolve({
-        success: true,
+        success: false,
         tabId,
         recordingId: rec.recordingId,
         outputPath: outPath,
@@ -1193,34 +1201,23 @@ async function findAndClick(params) {
   const text = params.text;
   const role = params.role;
 
-  const expression = `
-    (() => {
-      let target = null;
-      ${selector ? `target = document.querySelector(${JSON.stringify(selector)});` : ''}
-      if (!target && ${JSON.stringify(text || '')}) {
-        const searchText = ${JSON.stringify(text || '')}.toLowerCase();
-        const all = Array.from(document.querySelectorAll('button, a, div[role="button"], span, input, div, [aria-label]'));
-        target = all.find(el => {
-          const aria = (el.getAttribute('aria-label') || '').toLowerCase();
-          const t = (el.innerText || el.textContent || '').toLowerCase();
-          return aria.includes(searchText) || t.includes(searchText);
-        });
-      }
-      if (!target && ${JSON.stringify(role || '')}) {
-        target = document.querySelector(\`[role="${role}"]\`);
-      }
-      if (!target) return { found: false };
-      target.scrollIntoView({ behavior: 'instant', block: 'center' });
-      const rect = target.getBoundingClientRect();
-      return {
-        found: true,
-        x: Math.round(rect.left + rect.width / 2),
-        y: Math.round(rect.top + rect.height / 2),
-        tagName: target.tagName,
-        ariaLabel: target.getAttribute('aria-label')
-      };
-    })()
-  `;
+  if (!selector && !text && !role && !params.name) throw new Error("Provide selector, text or role");
+  const expression = `(${function locate({ selector, text, role }) {
+    const visible = el => {
+      const r = el.getBoundingClientRect();
+      const st = getComputedStyle(el);
+      return r.width > 0 && r.height > 0 && st.visibility !== "hidden" && st.display !== "none" && !el.disabled && el.getAttribute("aria-disabled") !== "true";
+    };
+    const impliedRoles = { BUTTON: "button", A: "link", TEXTAREA: "textbox", SELECT: "combobox" };
+    const candidates = Array.from(document.querySelectorAll(selector || 'button, a, input, textarea, select, [role], [aria-label], span, div'));
+    const query = (text || "").toLowerCase();
+    const matches = candidates.filter(el => visible(el) && (!role || (el.getAttribute("role") || impliedRoles[el.tagName]) === role) && (!query || (el.getAttribute("aria-label") || el.innerText || el.textContent || "").toLowerCase().includes(query)));
+    const target = matches.find(el => (el.getAttribute("aria-label") || el.innerText || el.textContent || "").toLowerCase().trim() === query) || matches.find(el => !matches.some(child => child !== el && el.contains(child))) || matches[0];
+    if (!target) return { found: false };
+    target.scrollIntoView({ behavior: "instant", block: "center" });
+    const rect = target.getBoundingClientRect();
+    return { found: true, x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+  }.toString()})(${JSON.stringify({ selector, text: text || params.name, role })})`;
 
   const evalRes = await cdpSend(tabId, "Runtime.evaluate", {
     expression,
@@ -1228,6 +1225,7 @@ async function findAndClick(params) {
     awaitPromise: true
   });
 
+  if (evalRes.exceptionDetails) throw new Error(evalRes.exceptionDetails.text || "Invalid locator");
   const loc = evalRes?.result?.value;
   if (!loc || !loc.found) {
     throw new Error(`Element not found for selector='${selector || ''}', text='${text || ''}', role='${role || ''}'.`);
@@ -1246,61 +1244,45 @@ async function pasteClipboard(params) {
   const tabId = parseInt(params.tabId, 10);
   await ensureDebugger(tabId);
 
-  const text = params.text || "";
+  if (typeof params.text !== "string") throw new Error("text must be a string");
+  const text = params.text;
   const html = params.html || "";
 
-  // Insert into page clipboard context and trigger dual synthetic DataTransfer paste
   const pasteExpression = `
-    (async () => {
-      let clipboardWriteSuccess = false;
-      try {
-        await navigator.clipboard.writeText(${JSON.stringify(text)});
-        clipboardWriteSuccess = true;
-      } catch (e) {}
-
-      try {
-        const dt = new DataTransfer();
-        dt.setData('text/plain', ${JSON.stringify(text)});
-        if (${JSON.stringify(html)}) {
-          dt.setData('text/html', ${JSON.stringify(html)});
-        }
-        const evt = new ClipboardEvent('paste', {
-          clipboardData: dt,
-          bubbles: true,
-          cancelable: true,
-          composed: true
-        });
-
-        // Target active element, waffle rich text editor (Google Sheets), or document
-        const target = document.getElementById('waffle-rich-text-editor') ||
-                       document.activeElement ||
-                       document.body;
-        const isStandardInput = (target instanceof HTMLInputElement) || (target instanceof HTMLTextAreaElement);
-        target.dispatchEvent(evt);
-        return { ok: true, isStandardInput, clipboardWriteSuccess, targetDispatched: true };
-      } catch (err) {
-        return { ok: false, error: err.message, clipboardWriteSuccess };
+    (() => {
+      const target = document.activeElement || document.body;
+      const isStandardInput = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
+      if (!isStandardInput && !target.isContentEditable && target === document.body && !document.getElementById('waffle-rich-text-editor')) {
+        return { ok: false, error: 'Focus an editable element before pasting' };
       }
+      const dt = new DataTransfer();
+      dt.setData('text/plain', ${JSON.stringify(text)});
+      if (${JSON.stringify(html)}) dt.setData('text/html', ${JSON.stringify(html)});
+      const event = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true, composed: true });
+      const consumed = !target.dispatchEvent(event);
+      return { ok: true, consumed, isStandardInput, editable: isStandardInput || target.isContentEditable };
     })()
   `;
-
-  const evalRes = await cdpSend(tabId, "Runtime.evaluate", {
-    expression: pasteExpression,
-    returnByValue: true,
-    awaitPromise: true
-  });
-  const resVal = evalRes?.result?.value;
-
-  // Only dispatch hardware Ctrl+V for custom canvas/rich editors (e.g. Google Sheets) to avoid duplicate paste in standard inputs
-  if (!resVal?.isStandardInput) {
-    await pressKey({ tabId, key: "v", ctrl: true });
+  const evaluated = await cdpSend(tabId, "Runtime.evaluate", { expression: pasteExpression, returnByValue: true, awaitPromise: true });
+  if (evaluated.exceptionDetails) throw new Error(evaluated.exceptionDetails.text || "Paste event failed");
+  const value = evaluated.result?.value;
+  if (!value?.ok) throw new Error(value?.error || "Paste failed");
+  if (!value.consumed) {
+    if (!value.editable) throw new Error("Editor did not handle the paste event. Verify its focus and paste support.");
+    await cdpSend(tabId, "Input.insertText", { text });
   }
-
-  return { success: true, tabId, pastedLength: text.length, hasHtml: !!html };
+  return { success: true, tabId, pastedLength: text.length, hasHtml: !!html, method: value.consumed ? "paste-event" : "insert-text", appliedHtml: !!html && value.consumed };
 }
 
 async function runActions(params) {
   const tabId = parseInt(params.tabId, 10);
+  if (!Array.isArray(params.actions)) throw new Error("actions must be an array");
+  const supported = new Set(["click", "find_and_click", "type", "press_key", "key", "paste", "hover", "scroll", "wait", "sleep", "evaluate", "eval"]);
+  for (const act of params.actions) {
+    if (!act || typeof act !== "object" || !supported.has(act.action || act.type)) throw new Error("Invalid or unsupported batch action");
+    if (act.tabId !== undefined && act.tabId !== tabId) throw new Error("A batch must target one tab; send a separate request for another tab");
+    for (const field of ["ms", "delay"]) if (act[field] !== undefined && (!Number.isFinite(act[field]) || act[field] < 0 || act[field] > 60000)) throw new Error(`Invalid action ${field}`);
+  }
   await ensureDebugger(tabId);
 
   let recordingActive = false;
@@ -1312,7 +1294,7 @@ async function runActions(params) {
 
   const actions = Array.isArray(params.actions) ? params.actions : [];
   const results = [];
-
+  let video = null;
   try {
     for (let i = 0; i < actions.length; i++) {
       const act = actions[i];
@@ -1349,8 +1331,8 @@ async function runActions(params) {
           break;
         case "wait":
         case "sleep":
-          await new Promise(r => setTimeout(r, act.ms || 100));
-          res = { waitedMs: act.ms || 100 };
+          await new Promise(r => setTimeout(r, act.ms ?? 100));
+          res = { waitedMs: act.ms ?? 100 };
           break;
         case "evaluate":
         case "eval":
@@ -1367,17 +1349,15 @@ async function runActions(params) {
         await new Promise(r => setTimeout(r, 40));
       }
     }
+  } catch (err) {
+    err.message = `Batch failed after ${results.length}/${actions.length} actions: ${err.message}`;
+    throw err;
   } finally {
-    // Settle for visual smoothness before finalizing
     if (recordingActive) {
       await new Promise(r => setTimeout(r, 300));
+      video = await stopRecording({ tabId, outputPath: outPath });
     }
   }
 
-  let video = null;
-  if (recordingActive) {
-    video = await stopRecording({ tabId, outputPath: outPath });
-  }
-
-  return { success: true, tabId, count: actions.length, results, video };
+  return { success: !video || video.success !== false, tabId, count: actions.length, results, video };
 }

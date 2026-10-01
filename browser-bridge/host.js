@@ -4,9 +4,8 @@ const net = require("net");
 const fs = require("fs");
 const path = require("path");
 
-const LOG_FILE = "/tmp/antigravity-native-host.log";
-const SOCKET_PATH = "/tmp/antigravity-browser-bridge.sock";
-const EXT_DIR = "/home/jayant/.gemini/antigravity/browser-extension";
+const LOG_FILE = process.env.ANTIGRAVITY_NATIVE_LOG || "/tmp/antigravity-native-host.log";
+const SOCKET_PATH = process.env.ANTIGRAVITY_SOCKET_PATH || "/tmp/antigravity-browser-bridge.sock";
 
 function log(str) {
   try {
@@ -22,7 +21,7 @@ const activeHostRecordings = new Map(); // recordingId -> { dir, outputPath, fra
 
 function detectLocalChromeProfile() {
   try {
-    let profileDir = "Default";
+    let profileDir = null;
     let ppid = process.ppid;
     for (let depth = 0; depth < 5 && ppid > 1; depth++) {
       const cmdlinePath = `/proc/${ppid}/cmdline`;
@@ -32,9 +31,6 @@ function detectLocalChromeProfile() {
         if (match) {
           profileDir = match[1];
           break;
-        }
-        if (cmdline.includes("chrome")) {
-          profileDir = "Default";
         }
         const statusPath = `/proc/${ppid}/status`;
         if (fs.existsSync(statusPath)) {
@@ -49,7 +45,8 @@ function detectLocalChromeProfile() {
       }
     }
 
-    const homeDir = process.env.HOME || "/home/jayant";
+    if (!profileDir) return { email: "unknown", domain: "", name: "unknown" };
+    const homeDir = require("os").homedir();
     const prefPath = path.join(homeDir, ".config/google-chrome", profileDir, "Preferences");
     if (fs.existsSync(prefPath)) {
       const data = JSON.parse(fs.readFileSync(prefPath, "utf8"));
@@ -74,6 +71,7 @@ process.stdin.on("data", (chunk) => {
   inputBuffer = Buffer.concat([inputBuffer, chunk]);
   while (inputBuffer.length >= 4) {
     const msgLen = inputBuffer.readUInt32LE(0);
+    if (msgLen === 0 || msgLen > 64 * 1024 * 1024) { log("Invalid native message length"); process.exit(1); }
     if (inputBuffer.length >= 4 + msgLen) {
       const msgBytes = inputBuffer.slice(4, 4 + msgLen);
       inputBuffer = inputBuffer.slice(4 + msgLen);
@@ -101,6 +99,10 @@ function sendToChrome(msg) {
   try {
     const json = JSON.stringify(msg);
     const len = Buffer.byteLength(json, "utf8");
+    if (len > 1024 * 1024) {
+      if (msg.id) return onChromeMessage({ id: msg.id, error: "Request exceeds Chrome native messaging 1 MiB limit. Split the batch or text." });
+      throw new Error("Native message exceeds 1 MiB limit");
+    }
     const header = Buffer.alloc(4);
     header.writeUInt32LE(len, 0);
     process.stdout.write(header);
@@ -128,7 +130,7 @@ function onChromeMessage(msg) {
       log(`Updated Chrome profile from handshake: ${JSON.stringify(profileInfo)}`);
     } else if (profileInfo.email && profileInfo.email !== "unknown") {
       // Feed our locally detected profile back to the extension
-      sendToChrome({ method: "set_profile", params: { profile: profileInfo } });
+      sendToChrome({ id: `set_profile_${Date.now()}`, method: "set_profile", params: { profile: profileInfo } });
     }
     sendRegistration();
     return;
@@ -136,7 +138,8 @@ function onChromeMessage(msg) {
 
   // Handle Video Recording Lifecycle
   if (msg.type === "recording_init") {
-    const dir = `/tmp/antigravity-recordings/${msg.recordingId}`;
+    if (typeof msg.recordingId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(msg.recordingId)) return;
+    const dir = fs.mkdtempSync(path.join(require("os").tmpdir(), "antigravity-recording-"));
     try {
       fs.mkdirSync(dir, { recursive: true });
     } catch (e) {}
@@ -152,7 +155,7 @@ function onChromeMessage(msg) {
 
   if (msg.type === "screencast_frame") {
     const rec = activeHostRecordings.get(msg.recordingId);
-    if (rec) {
+    if (rec && Number.isSafeInteger(msg.frameIndex) && msg.frameIndex > 0 && typeof msg.data === "string") {
       const frameFile = path.join(rec.dir, `frame_${String(msg.frameIndex).padStart(6, "0")}.jpg`);
       try {
         fs.writeFileSync(frameFile, Buffer.from(msg.data, "base64"));
@@ -167,9 +170,16 @@ function onChromeMessage(msg) {
     return;
   }
 
+  if (msg.type === "recording_cancel") {
+    const rec = activeHostRecordings.get(msg.recordingId);
+    if (rec) { activeHostRecordings.delete(msg.recordingId); fs.rmSync(rec.dir, { recursive: true, force: true }); }
+    return;
+  }
+
   if (msg.type === "recording_finalize") {
     const rec = activeHostRecordings.get(msg.recordingId);
     if (!rec || rec.frames.length === 0) {
+      if (rec) { activeHostRecordings.delete(msg.recordingId); fs.rmSync(rec.dir, { recursive: true, force: true }); }
       log(`Finalizing recording ${msg.recordingId}: no frames recorded.`);
       sendToChrome({
         type: "recording_complete",
@@ -199,7 +209,7 @@ function onChromeMessage(msg) {
     const listPath = path.join(rec.dir, "list.txt");
     fs.writeFileSync(listPath, manifest, "utf8");
 
-    const finalOutput = path.resolve(msg.outputPath || rec.outputPath);
+    const finalOutput = path.resolve(msg.outputPath || rec.outputPath || path.join(require("os").tmpdir(), `${msg.recordingId}.mp4`));
     const outDir = path.dirname(finalOutput);
     if (!fs.existsSync(outDir)) {
       fs.mkdirSync(outDir, { recursive: true });
@@ -219,8 +229,14 @@ function onChromeMessage(msg) {
       finalOutput
     ];
 
-    const ff = spawn("ffmpeg", ffArgs);
+    const ff = spawn("ffmpeg", ffArgs, { stdio: ["ignore", "ignore", "ignore"] });
+    ff.on("error", (err) => {
+      activeHostRecordings.delete(msg.recordingId);
+      fs.rmSync(rec.dir, { recursive: true, force: true });
+      sendToChrome({ type: "recording_complete", recordingId: msg.recordingId, result: { success: false, error: `Unable to run ffmpeg: ${err.message}` } });
+    });
     ff.on("close", (code) => {
+      if (!activeHostRecordings.has(msg.recordingId)) return;
       activeHostRecordings.delete(msg.recordingId);
       try {
         fs.rmSync(rec.dir, { recursive: true, force: true });
@@ -289,6 +305,7 @@ function connectToMcpServer() {
     sendToChrome({ id: `reg_profile_${Date.now()}`, method: "get_profile" });
   });
 
+  socket.setEncoding("utf8");
   let buffer = "";
   socket.on("data", (chunk) => {
     buffer += chunk.toString("utf8");

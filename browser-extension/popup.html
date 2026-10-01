@@ -23,7 +23,7 @@
       width: 10px;
       height: 10px;
       border-radius: 50%;
-      background: #10b981;
+      background: #737373;
     }
     .title {
       font-weight: 600;
@@ -59,11 +59,12 @@
     <div class="status-dot" id="statusDot"></div>
     <div class="title">Antigravity Bridge</div>
   </div>
-  <div class="status-box">
-    <div><strong>Host:</strong> <span class="badge" id="hostStatus">Connected</span></div>
-    <div style="margin-top: 6px;"><strong>CDP Engine:</strong> Active</div>
+  <div class="status-box" role="status" aria-live="polite">
+    <div><strong>Host:</strong> <span class="badge" id="hostStatus">Checking…</span></div>
+    <div style="margin-top: 6px;"><strong>CDP Engine:</strong> <span id="cdpStatus">Checking…</span></div>
     <div style="margin-top: 6px;"><strong>Port Mode:</strong> Native Messaging</div>
   </div>
-  <div class="footer">Zero-prompt automation active</div>
+  <div class="footer">Native host status</div>
+  <script src="popup.js"></script>
 </body>
 </html>

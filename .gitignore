@@ -22,3 +22,15 @@ yarn-error.log*
 *.jpg
 *.jpeg
 scratch/
+
+# Packaged extension assets must be present in fresh checkouts.
+!browser-extension/icons/*.png
+!browser-extension/images/cursor.png
+
+# Private access material
+keys/
+env-files/
+creds/
+.env
+.env.*
+browser-bridge/node-runtime.sh

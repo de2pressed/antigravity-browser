@@ -1,1 +1,34 @@
-{"name":"browser_type","description":"Type text into an element by UID (auto-focused) or the currently focused element via hardware keyboard events.","parameters":{"properties":{"clear":{"description":"Whether to clear existing text first (Select All + Backspace).","type":"boolean"},"pressEnter":{"description":"Whether to press Enter after typing.","type":"boolean"},"tabId":{"description":"The ID of the target tab.","type":"number"},"text":{"description":"The text to type.","type":"string"},"uid":{"description":"Optional UID of element to focus and type into.","type":"string"}},"required":["tabId","text"],"type":"object"}}
+{
+  "name": "browser_type",
+  "description": "Type text into an element by UID (auto-focused) or the currently focused element via hardware keyboard events.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "tabId": {
+        "type": "integer",
+        "description": "The ID of the target tab.",
+        "minimum": 1
+      },
+      "text": {
+        "type": "string",
+        "description": "The text to type."
+      },
+      "uid": {
+        "type": "string",
+        "description": "Optional UID of element to focus and type into."
+      },
+      "clear": {
+        "type": "boolean",
+        "description": "Whether to clear existing text first (Select All + Backspace)."
+      },
+      "pressEnter": {
+        "type": "boolean",
+        "description": "Whether to press Enter after typing."
+      }
+    },
+    "required": [
+      "tabId",
+      "text"
+    ]
+  }
+}

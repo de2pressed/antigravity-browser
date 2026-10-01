@@ -1,1 +1,17 @@
-{"name":"browser_close_tab","description":"Close an open tab in Google Chrome by tab ID.","parameters":{"properties":{"tabId":{"description":"The ID of the tab to close.","type":"number"}},"required":["tabId"],"type":"object"}}
+{
+  "name": "browser_close_tab",
+  "description": "Close an open tab in Google Chrome by tab ID.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "tabId": {
+        "type": "integer",
+        "description": "The ID of the tab to close.",
+        "minimum": 1
+      }
+    },
+    "required": [
+      "tabId"
+    ]
+  }
+}

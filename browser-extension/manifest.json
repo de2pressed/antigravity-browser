@@ -12,18 +12,22 @@
     "nativeMessaging",
     "storage",
     "webNavigation",
-    "cookies",
     "identity",
     "clipboardRead",
-    "clipboardWrite"
+    "clipboardWrite",
+    "identity.email"
   ],
   "host_permissions": [
     "<all_urls>"
   ],
   "web_accessible_resources": [
     {
-      "matches": ["<all_urls>"],
-      "resources": ["images/cursor.png"]
+      "matches": [
+        "<all_urls>"
+      ],
+      "resources": [
+        "images/cursor.png"
+      ]
     }
   ],
   "background": {

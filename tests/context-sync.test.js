@@ -1,0 +1,9 @@
+const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const os=require('node:os');const path=require('node:path');const {execFileSync}=require('node:child_process');
+test('context sync preserves custom rules, is idempotent and mirrors all five skills',t=>{
+ const home=fs.mkdtempSync(path.join(os.tmpdir(),'agy-context-'));t.after(()=>fs.rmSync(home,{recursive:true,force:true}));const file=path.join(home,'.gemini/GEMINI.md');fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,'# Other project rules\nKeep this rule.\n');const script=path.join(__dirname,'../scripts/sync-antigravity-context.py');
+ execFileSync('python3',[script,'--home',home]);const first=fs.readFileSync(file,'utf8');execFileSync('python3',[script,'--home',home]);const second=fs.readFileSync(file,'utf8');assert.equal(first,second);assert.match(second,/Keep this rule/);assert.equal(second.split('<!-- antigravity-browser:start -->').length,2);
+ for(const name of ['browser-control','agent-browser','browser-google-sheets','spreadsheets-mastery','playwright-interactive']){
+  const source=path.resolve(__dirname,'../skills',name,'SKILL.md');const canonical=fs.readFileSync(source,'utf8');const expected=canonical.replace(/\[([^\]]*)\]\(([^)]+)\)/g,(original,label,link)=>{if(/^(https?:|#|\/|~)/.test(link))return original;const [relative,fragment]=link.split('#');const resolved=path.resolve(path.dirname(source),relative);return resolved.startsWith(path.resolve(__dirname,'../skills')+path.sep)?original:`[${label}](${resolved}${fragment?'#'+fragment:''})`;});assert.equal(fs.readFileSync(path.join(home,'.gemini/config/skills',name,'SKILL.md'),'utf8'),expected);
+ }
+ assert.equal(fs.readdirSync(path.join(home,'.gemini/config/context-backups')).length,2);
+});

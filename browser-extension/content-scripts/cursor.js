@@ -19,7 +19,7 @@
   let currentY = 250;
   let targetX = 350;
   let targetY = 250;
-  let isVisible = true;
+  let isVisible = false;
   let currentMode = "idle"; // "idle" | "thinking"
   let currentTilt = 0;
   let currentStretch = 1;
@@ -223,7 +223,7 @@
 
   // Animation Loop (Spring interpolation + Dynamic directional tilt)
   function startAnimationLoop() {
-    if (animFrameId) cancelAnimationFrame(animFrameId);
+    if (animFrameId) return;
 
     function tick() {
       const dx = targetX - currentX;
@@ -264,7 +264,11 @@
         pointerWrapper.style.transform = `rotate(${Math.round(currentTilt * 10) / 10}deg) scale(${Math.round(currentSqueeze * 1000) / 1000}, ${Math.round(currentStretch * 1000) / 1000})`;
       }
 
-      animFrameId = requestAnimationFrame(tick);
+      if (isVisible && (dist >= 1 || Math.abs(currentTilt) > 0.05 || Math.abs(currentStretch - 1) > 0.001 || Math.abs(currentSqueeze - 1) > 0.001)) {
+        animFrameId = requestAnimationFrame(tick);
+      } else {
+        animFrameId = null;
+      }
     }
 
     animFrameId = requestAnimationFrame(tick);
@@ -298,6 +302,7 @@
 
   function applyCursorState(state) {
     if (!state) return;
+    if (!rootElement?.isConnected) initOverlay();
 
     isVisible = state.isVisible !== false && state.cursor?.visible !== false;
 
@@ -311,6 +316,7 @@
       }
     }
 
+    startAnimationLoop();
     if (state.mode) {
       setCursorMode(state.mode, state.badge);
     } else if (state.actionType === "thinking") {
@@ -321,6 +327,8 @@
   // Communication Handlers
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.type === "CONTENT_PING") {
+      if (!rootElement?.isConnected) initOverlay();
+      startAnimationLoop();
       sendResponse({ ok: true });
       return true;
     }

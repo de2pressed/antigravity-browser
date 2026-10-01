@@ -4,11 +4,11 @@ const net = require("net");
 const fs = require("fs");
 const path = require("path");
 
-const { execSync } = require("child_process");
+const { execFileSync } = require("child_process");
 
-const SOCKET_PATH = "/tmp/antigravity-browser-bridge.sock";
-const LOG_FILE = "/tmp/antigravity-daemon.log";
-const EXT_DIR_RAW = "/home/jayant/.gemini/antigravity/browser-extension";
+const SOCKET_PATH = process.env.ANTIGRAVITY_SOCKET_PATH || "/tmp/antigravity-browser-bridge.sock";
+const LOG_FILE = process.env.ANTIGRAVITY_DAEMON_LOG || "/tmp/antigravity-daemon.log";
+const EXT_DIR_RAW = process.env.ANTIGRAVITY_EXTENSION_DIR || path.join(__dirname, "../browser-extension");
 const EXT_DIR = fs.existsSync(EXT_DIR_RAW) ? fs.realpathSync(EXT_DIR_RAW) : EXT_DIR_RAW;
 
 function log(str) {
@@ -18,18 +18,38 @@ function log(str) {
 }
 
 const hosts = new Map();         // hostId -> { id, socket, profile, pid }
-const tabToHostMap = new Map();  // tabId -> hostId
 let hostSeq = 1;
 
+// Serialize startup, including stale socket recovery, across concurrent MCP clients.
+const LOCK_PATH = `${SOCKET_PATH}.lock`;
+let lockInode = null;
+try {
+  let lockFd;
+  try { lockFd = fs.openSync(LOCK_PATH, "wx", 0o600); }
+  catch (err) {
+    if (err.code !== "EEXIST") throw err;
+    const owner = Number(fs.readFileSync(LOCK_PATH, "utf8"));
+    if (!Number.isSafeInteger(owner) || owner <= 0) throw new Error("Daemon startup lock is incomplete; inspect the lock before removing it");
+    try { process.kill(owner, 0); process.exit(0); }
+    catch (probeErr) { if (probeErr.code !== "ESRCH") throw probeErr; }
+    fs.unlinkSync(LOCK_PATH);
+    lockFd = fs.openSync(LOCK_PATH, "wx", 0o600);
+  }
+  fs.writeFileSync(lockFd, String(process.pid));
+  lockInode = fs.fstatSync(lockFd).ino;
+  fs.closeSync(lockFd);
+} catch (err) { log(`Startup lock failed: ${err.message}`); process.exit(1); }
+
+let socketInode = null;
 function cleanup() {
   try {
-    if (fs.existsSync(SOCKET_PATH)) {
+    if (socketInode !== null && fs.existsSync(SOCKET_PATH) && fs.lstatSync(SOCKET_PATH).ino === socketInode) {
       fs.unlinkSync(SOCKET_PATH);
     }
   } catch (e) {}
+  try { if (lockInode !== null && fs.lstatSync(LOCK_PATH).ino === lockInode) fs.unlinkSync(LOCK_PATH); } catch (_) {}
 }
 
-cleanup();
 process.on("exit", cleanup);
 process.on("SIGINT", () => { cleanup(); process.exit(0); });
 process.on("SIGTERM", () => { cleanup(); process.exit(0); });
@@ -40,6 +60,7 @@ const server = net.createServer((socket) => {
   let hostId = null;
   const pendingRequests = new Map();
 
+  socket.setEncoding("utf8");
   let buffer = "";
   socket.on("data", (chunk) => {
     buffer += chunk.toString("utf8");
@@ -108,10 +129,13 @@ const server = net.createServer((socket) => {
   socket.on("close", () => {
     if (isHost && hostId) {
       log(`Host disconnected: ${hostId}`);
-      hosts.delete(hostId);
-      for (const [tabId, hId] of tabToHostMap.entries()) {
-        if (hId === hostId) tabToHostMap.delete(tabId);
+      if (hosts.get(hostId)?.socket === socket) hosts.delete(hostId);
+      for (const { reject, timer } of pendingRequests.values()) {
+        clearTimeout(timer);
+        reject(new Error("Chrome host disconnected before responding."));
       }
+      pendingRequests.clear();
+
     }
   });
 });
@@ -144,6 +168,11 @@ function callHost(hostRecord, method, params = {}, timeoutMs = 30000) {
 // Client request router
 async function handleClientRequest(clientSocket, msg) {
   const { id, method, params = {} } = msg;
+  const hostTimeout = method === "stop_recording" || method === "run_actions" ? 90000 : 30000;
+  if (!params || typeof params !== "object" || Array.isArray(params)) {
+    clientSocket.write(JSON.stringify({ id, error: "params must be an object" }) + "\n");
+    return;
+  }
 
   try {
     let result;
@@ -160,10 +189,12 @@ async function handleClientRequest(clientSocket, msg) {
     } else if (method === "reload_extension") {
       const activeHosts = Array.from(hosts.values());
       log(`Triggering reload_extension on ${activeHosts.length} active hosts.`);
-      await Promise.allSettled(
+      const outcomes = await Promise.allSettled(
         activeHosts.map(h => callHost(h, "reload_extension", {}, 5000))
       );
-      result = { success: true, reloadedProfiles: activeHosts.map(h => h.profile.email) };
+      const failedProfiles = outcomes.flatMap((r, i) => r.status === "rejected" ? [{ profile: activeHosts[i].profile.email, error: r.reason.message }] : []);
+      result = { success: activeHosts.length > 0 && failedProfiles.length === 0,
+        reloadedProfiles: activeHosts.filter((_, i) => outcomes[i].status === "fulfilled").map(h => h.profile.email), failedProfiles };
     } else if (method === "close_agent_tabs") {
       const activeHosts = Array.from(hosts.values());
       const queryResults = await Promise.allSettled(
@@ -175,8 +206,8 @@ async function handleClientRequest(clientSocket, msg) {
           allClosed.push(...r.value.closedTabs);
         }
       });
-      allClosed.forEach(id => tabToHostMap.delete(id));
-      result = { success: true, closedTabs: allClosed };
+      const failedProfiles = queryResults.flatMap((r, i) => r.status === "rejected" || r.value?.success === false ? [{ profile: activeHosts[i].profile.email, error: r.reason?.message || "Some tabs could not be closed" }] : []);
+      result = { success: activeHosts.length > 0 && failedProfiles.length === 0, closedTabs: allClosed, failedProfiles };
     } else if (method === "list_tabs") {
       const activeHosts = Array.from(hosts.values());
       if (activeHosts.length === 0) {
@@ -185,12 +216,13 @@ async function handleClientRequest(clientSocket, msg) {
         const queryResults = await Promise.allSettled(
           activeHosts.map(h => callHost(h, "list_tabs", {}))
         );
+        const failures = queryResults.filter(r => r.status === "rejected");
+        if (failures.length) throw new Error(`Could not list all profiles: ${failures.map(r => r.reason.message).join("; ")}`);
         const allTabs = [];
         queryResults.forEach((res, idx) => {
           if (res.status === "fulfilled" && Array.isArray(res.value)) {
             const h = activeHosts[idx];
             res.value.forEach(tab => {
-              tabToHostMap.set(tab.id, h.id);
               allTabs.push({
                 ...tab,
                 profileEmail: h.profile.email || tab.profileEmail || "default"
@@ -204,15 +236,11 @@ async function handleClientRequest(clientSocket, msg) {
       const targetHost = resolveHostForProfile(params.profile);
       result = await callHost(targetHost, "new_tab", params);
       if (result && result.tabId) {
-        tabToHostMap.set(result.tabId, targetHost.id);
         result.profileEmail = targetHost.profile.email;
       }
     } else {
       const targetHost = await resolveHostForTab(params.tabId);
-      result = await callHost(targetHost, method, params);
-      if (method === "close_tab" && params.tabId) {
-        tabToHostMap.delete(parseInt(params.tabId, 10));
-      }
+      result = await callHost(targetHost, method, params, hostTimeout);
     }
 
     clientSocket.write(JSON.stringify({ id, result }) + "\n");
@@ -226,56 +254,41 @@ function resolveHostForProfile(profileHint) {
   if (activeHosts.length === 0) {
     throw new Error("No Chrome profiles are currently connected to Antigravity Browser Bridge.");
   }
-  if (!profileHint) return activeHosts[0];
-
-  const query = profileHint.toLowerCase().trim();
-  for (const h of activeHosts) {
-    const email = (h.profile.email || "").toLowerCase();
-    if (email === query) return h;
-    if (query.includes("devops") || query.includes("qtloads") || query.includes("profile 6")) {
-      if (email.includes("devops") || email.includes("qtloads")) return h;
-    }
-    if (query.includes("jayant") || query.includes("dahiya") || query.includes("1204") || query.includes("default")) {
-      if (email.includes("jayant") || email.includes("gmail") || email === "unknown" || (!email.includes("qtloads") && !email.includes("devops"))) return h;
-    }
-    if (email.includes(query)) return h;
+  if (!profileHint) {
+    if (activeHosts.length !== 1) throw new Error("Multiple Chrome profiles connected. Specify profile explicitly.");
+    return activeHosts[0];
   }
-  return activeHosts[0];
+
+  if (typeof profileHint !== "string" || !profileHint.trim()) throw new Error("Invalid profile hint.");
+  const query = profileHint.toLowerCase().trim();
+  const exact = activeHosts.filter(h => [h.profile.email, h.profile.name, h.profile.profileDir, h.id].some(v => typeof v === "string" && v.toLowerCase() === query));
+  const matches = exact.length ? exact : activeHosts.filter(h => [h.profile.email, h.profile.name, h.profile.profileDir].some(v => typeof v === "string" && v.toLowerCase().includes(query)));
+  if (matches.length !== 1) throw new Error(matches.length ? `Ambiguous Chrome profile '${profileHint}'. Use an exact email or host ID.` : `Chrome profile '${profileHint}' is not connected.`);
+  return matches[0];
 }
 
 async function resolveHostForTab(tabId) {
-  const numId = parseInt(tabId, 10);
-  const hostId = tabToHostMap.get(numId);
-  if (hostId && hosts.has(hostId)) {
-    const candidate = hosts.get(hostId);
-    if (candidate.socket && !candidate.socket.destroyed) {
-      return candidate;
-    }
-  }
-
-  // Not in map yet (e.g. after reconnect). Query all hosts to locate tab.
+  if (!Number.isSafeInteger(tabId) || tabId <= 0) throw new Error("tabId must be a positive integer.");
   const activeHosts = Array.from(hosts.values()).filter(h => h.socket && !h.socket.destroyed);
-  if (activeHosts.length === 0) throw new Error("No Chrome profiles connected.");
-
-  for (const h of activeHosts) {
-    try {
-      const tabs = await callHost(h, "list_tabs", {}, 3000);
-      if (Array.isArray(tabs)) {
-        for (const t of tabs) {
-          tabToHostMap.set(t.id, h.id);
-        }
-        if (tabs.some(t => t.id === numId)) {
-          return h;
-        }
-      }
-    } catch (e) {}
-  }
-
-  return activeHosts[0];
+  if (!activeHosts.length) throw new Error("No Chrome profiles connected.");
+  // Profile-scoped Chrome IDs may collide. Never route from a lossy tab-ID cache.
+  const results = await Promise.all(activeHosts.map(async h => ({ host: h, tabs: await callHost(h, "list_tabs", {}, 3000) })));
+  const matches = results.filter(r => Array.isArray(r.tabs) && r.tabs.some(t => t.id === tabId));
+  if (matches.length !== 1) throw new Error(matches.length ? `Tab ${tabId} is ambiguous across profiles.` : `Tab ${tabId} was not found in any connected profile.`);
+  return matches[0].host;
 }
 
 // 4. Hot-Reload Watcher on Extension Directory
 let reloadDebounce = null;
+function checkExtensionSyntax(dir) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name.startsWith(".")) continue;
+    const file = path.join(dir, entry.name);
+    if (entry.isDirectory()) checkExtensionSyntax(file);
+    else if (entry.name.endsWith(".js")) execFileSync(process.execPath, ["--check", file], { stdio: "pipe" });
+    else if (entry.name === "manifest.json") JSON.parse(fs.readFileSync(file, "utf8"));
+  }
+}
 try {
   if (fs.existsSync(EXT_DIR)) {
     fs.watch(EXT_DIR, { recursive: true }, (eventType, filename) => {
@@ -283,15 +296,8 @@ try {
       if (reloadDebounce) clearTimeout(reloadDebounce);
       reloadDebounce = setTimeout(async () => {
         log(`Extension source file modified (${filename}). Checking syntax before reload.`);
-        if (filename.endsWith(".js")) {
-          const filePath = path.join(EXT_DIR, filename);
-          try {
-            execSync(`node --check "${filePath}"`, { stdio: "pipe" });
-          } catch (err) {
-            log(`Syntax check failed for ${filename}: ${err.message}. Aborting hot reload.`);
-            return;
-          }
-        }
+        try { checkExtensionSyntax(EXT_DIR); }
+        catch (err) { log(`Extension validation failed: ${err.message}. Aborting hot reload.`); return; }
         log(`Syntax check passed. Triggering hot reload on active hosts.`);
         const activeHosts = Array.from(hosts.values());
         for (const h of activeHosts) {
@@ -307,7 +313,21 @@ try {
   log(`Watcher setup error: ${e.message}`);
 }
 
-server.listen(SOCKET_PATH, () => {
+server.on("error", (err) => {
+  if (err.code !== "EADDRINUSE") { log(`Listen failed: ${err.message}`); process.exit(1); }
+  const probe = net.createConnection(SOCKET_PATH);
+  probe.on("connect", () => { probe.destroy(); process.exit(0); });
+  probe.on("error", (probeErr) => {
+    if (!["ECONNREFUSED", "ENOENT"].includes(probeErr.code)) { log(`Socket probe failed: ${probeErr.message}`); process.exit(1); }
+    try { if (fs.lstatSync(SOCKET_PATH).isSocket()) fs.unlinkSync(SOCKET_PATH); else throw new Error("Existing path is not a socket"); }
+    catch (e) { if (e.code !== "ENOENT") { log(e.message); process.exit(1); } }
+    server.listen(SOCKET_PATH);
+  });
+});
+server.on("listening", () => {
+  socketInode = fs.lstatSync(SOCKET_PATH).ino;
   try { fs.chmodSync(SOCKET_PATH, 0o600); } catch (e) {}
   log(`Bridge Daemon listening on ${SOCKET_PATH}`);
 });
+
+server.listen(SOCKET_PATH);

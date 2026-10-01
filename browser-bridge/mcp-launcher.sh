@@ -1,3 +1,5 @@
 #!/usr/bin/env bash
-export PATH="/home/jayant/.nvm/versions/node/v24.16.0/bin:$PATH"
-exec /home/jayant/.nvm/versions/node/v24.16.0/bin/node /home/jayant/.gemini/antigravity/browser-bridge/mcp-server.js "$@"
+set -euo pipefail
+BRIDGE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+[ ! -f "$BRIDGE_DIR/node-runtime.sh" ] || source "$BRIDGE_DIR/node-runtime.sh"
+exec "${ANTIGRAVITY_NODE:-node}" "$BRIDGE_DIR/mcp-server.js" "$@"

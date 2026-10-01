@@ -1,1 +1,22 @@
-{"name":"browser_navigate","description":"Navigate an existing tab to a new URL and wait for page load to finish.","parameters":{"properties":{"tabId":{"description":"The ID of the tab to navigate.","type":"number"},"url":{"description":"The destination URL.","type":"string"}},"required":["tabId","url"],"type":"object"}}
+{
+  "name": "browser_navigate",
+  "description": "Navigate an existing tab to a new URL and wait for page load to finish.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "tabId": {
+        "type": "integer",
+        "description": "The ID of the tab to navigate.",
+        "minimum": 1
+      },
+      "url": {
+        "type": "string",
+        "description": "The destination URL."
+      }
+    },
+    "required": [
+      "tabId",
+      "url"
+    ]
+  }
+}

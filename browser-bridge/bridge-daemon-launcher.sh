@@ -1,3 +1,5 @@
 #!/usr/bin/env bash
-export PATH="$HOME/.local/bin:$HOME/.nvm/versions/node/v24.16.0/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
-exec node /home/jayant/.gemini/antigravity/browser-bridge/bridge-daemon.js
+set -euo pipefail
+BRIDGE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+[ ! -f "$BRIDGE_DIR/node-runtime.sh" ] || source "$BRIDGE_DIR/node-runtime.sh"
+exec "${ANTIGRAVITY_NODE:-node}" "$BRIDGE_DIR/bridge-daemon.js" "$@"
