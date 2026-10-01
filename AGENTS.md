@@ -20,7 +20,7 @@ Last updated: 2026-10-01 (Asia/Kolkata). Read this file and [global status](agen
 
 This is Jayant's local Chrome automation bridge. A change can affect logged-in personal and work Chrome profiles. Scope browser verification to dedicated scratch tabs and known IDs; never bulk-close tabs during an audit. A profile email does not prove the account authenticated on a page.
 
-Local analysis, fixes, regression tests, and documentation were authorized on 2026-10-01. That authorization does not authorize sending messages, submitting forms, changing cloud resources, or publishing Git commits/PRs unless the user separately authorizes them. On 2026-10-01 the user explicitly authorized committing/pushing this audit as devops942. Obtain explicit authorization for external account actions and Git pushes. Preserve unrelated working-tree changes.
+Local analysis, fixes, regression tests, and documentation were authorized on 2026-10-01. That authorization does not authorize sending messages, submitting forms, changing cloud resources, or publishing Git commits/PRs unless the user separately authorizes them. On 2026-10-01 the user explicitly authorized committing/pushing this audit with devops942 author/committer identity, then authorized active de2pressed GitHub authentication for publication. Obtain explicit authorization for external account actions and Git pushes. Preserve unrelated working-tree changes.
 
 Never store cookies, tokens, session exports, account credentials, or private keys in docs or tracked files. `keys/`, `env-files/`, `creds/`, and `.env*` are ignored. Manifest `key` is a public extension identity key; it is not an account credential. Paths and access mechanisms belong in the access index.
 
