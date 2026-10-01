@@ -7,7 +7,7 @@ description: Elite automation skill for creating, editing, formatting, and analy
 
 Google Sheets is the primary data and modeling canvas for business, finance, and engineering. However, agents routinely fail on Google Sheets because **cells do not exist in the DOM**. The grid is rendered onto an HTML5 `<canvas>`. Attempting to click cells via DOM queries or pixel guessing results in missed clicks, misaligned inputs, and ruined spreadsheets.
 
-This skill equips Antigravity with the exact methods used by high-performance automation agents to control Google Sheets deterministically, at speeds exceeding 1,000 cells per second.
+This skill equips Antigravity with the exact methods used by high-performance automation agents to control Google Sheets deterministically, with explicit target selection and application-state verification.
 
 ---
 
@@ -26,7 +26,7 @@ graph TD
 ### The Three Golden Rules of Google Sheets:
 1. **Never Click the Canvas Grid**: You cannot locate cell `B14` via CSS selectors.
 2. **Always Navigate via the Name Box (`#t-name-box`)**: Jump to any cell or multi-cell range instantly by typing the coordinates and pressing `Enter`.
-3. **Always Ingest Data via Dual TSV + HTML (`browser_paste`)**: Format data as TSV (values) and HTML table (inline CSS colors, badges, borders, alignments) and paste via `browser_paste`. Google Sheets natively parses both simultaneously.
+3. **Prefer TSV with optional HTML (`browser_paste`)**: Format data as TSV (values) and HTML table (inline CSS colors, badges, borders, alignments) and paste via `browser_paste`. Rich-editor acceptance and formatting are application-dependent; verify the resulting cells and styles.
 
 ---
 
@@ -34,7 +34,7 @@ graph TD
 
 ### Step 1: Claim or Open the Spreadsheet
 1. Use `browser_list_tabs` or `agy-browser tabs` to find the target sheet.
-2. If already open, claim it immediately via `agy-browser claim <tabId>` or `browser_claim_tab`.
+2. If already open and the user authorized this exact spreadsheet, claim it via `agy-browser claim <tabId>` or `browser_claim_tab`.
 3. If creating a new sheet, navigate to `https://sheets.new`.
 
 ### Step 2: Jump to Target Cell or Range
@@ -53,7 +53,7 @@ Dispatch via `browser_paste`:
 ```bash
 agy-browser paste <tabId> "$tsv_payload" --html "$html_payload"
 ```
-In **one atomic clipboard operation**, data, formulas, header styles, and cell colors are populated instantly.
+One paste event carries the payload. This is not an atomic application save: read back values/formulas, formatting and save status before proceeding.
 
 ### Step 4: Formatting & Layout Polish
 1. **Auto-Fit Column Widths**: Jump to data columns (e.g. `B:N`) via `#t-name-box` -> click `input[placeholder="Menus"]` -> type `"Resize columns"` -> Enter -> select JFK radio `#waffle-resize-selection-auto-label` -> OK.
@@ -66,13 +66,13 @@ In **one atomic clipboard operation**, data, formulas, header styles, and cell c
 
 | Action | Recommended Tool Call | Speed / Efficiency |
 |---|---|---|
-| Select Cell / Range | `browser_run_actions` (click `#t-name-box` -> type range -> press `Enter`) | ~150ms |
-| Populate Data & Styles | `browser_paste` (dual TSV + HTML table) | ~50ms for 1,000+ cells |
-| Single Formula Edit | Focus Formula Bar `.cell-input` or press `F2` -> `browser_type` -> `Enter` | ~200ms |
-| Auto-Fit Columns | Jump to range -> `input[placeholder="Menus"]` -> `"Resize columns"` -> Fit | ~250ms |
-| Freeze Header | Jump to A1 -> `input[placeholder="Menus"]` -> `"Freeze 1 row"` | ~200ms |
-| Add Sheet Tab | `browser_find_and_click` on `div[aria-label="Add Sheet"]` or `Shift+F11` | ~300ms |
-| Export & Verify | Download via URL `/export?format=xlsx` -> Python validation | 100% verified |
+| Select Cell / Range | `browser_run_actions` (click `#t-name-box` -> type range -> press `Enter`) | Verify range selection |
+| Populate Data & Styles | `browser_paste` (dual TSV + HTML table) | Verify cell count and content |
+| Single Formula Edit | Focus Formula Bar `.cell-input` or press `F2` -> `browser_type` -> `Enter` | Read back result |
+| Auto-Fit Columns | Jump to range -> `input[placeholder="Menus"]` -> `"Resize columns"` -> Fit | Inspect widths |
+| Freeze Header | Jump to A1 -> `input[placeholder="Menus"]` -> `"Freeze 1 row"` | Read back result |
+| Add Sheet Tab | `browser_find_and_click` on `div[aria-label="Add Sheet"]` or `Shift+F11` | Verify sheet tab |
+| Export & Verify | Download via URL `/export?format=xlsx` -> Python validation | Validate exported file if available |
 
 ---
 

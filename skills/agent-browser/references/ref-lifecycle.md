@@ -1,45 +1,17 @@
-# Ref Lifecycle & Invalidation Engineering
+# Snapshot UID lifecycle
 
-Ref indexing is an optimization pattern that maps short numerical or alphanumeric tokens (e.g. `@e1`, `@e2`, `[1]`, `[2]`) to DOM elements, reducing prompt token consumption by up to 80%.
+The extension retrieves Chrome's accessibility tree and assigns each retained node a handle `uid=<tabId>_<generation>_<index>`. It stores the backend DOM node ID with that handle. These are not CSS selectors, Playwright locators, or `e1` aliases.
 
----
+A new snapshot replaces the tab's mapping and uses a new generation, so an old UID cannot silently resolve to a different element. Navigation/loading and debugger detachment clear the mapping. DOM changes within a page may remove the underlying node; take another snapshot after forms, modal changes, or list updates.
 
-## 1. How Element Refs are Generated
-
-During snapshot generation:
-1. Traverse interactive DOM elements (`a`, `button`, `input`, `select`, `textarea`, `[role="button"]`, `[tabindex]`).
-2. Filter out non-visible elements (`offsetParent === null`, `visibility: hidden`, `display: none`).
-3. Assign sequential handles `e1`, `e2`, `e3`...
-4. Store mapping: `refId -> { selector, xpath, boundingBox: { x, y, width, height } }`.
-5. Return compressed tree:
-```
-[e1] button: "Get Started"
-[e2] a: "Pricing"
-[e3] input[type="email"]: "Enter your email"
+```bash
+agy-browser snap <tabId>
+agy-browser click <tabId> <uid-from-that-snapshot>
 ```
 
----
+Informational accessibility nodes can appear without a backing DOM element. Such nodes cannot necessarily be clicked. Use a visible actionable node, a precise selector through `fc`, or explicit coordinates after checking the current page.
 
-## 2. Invalidation Conditions
+## See also
 
-A ref cache becomes **invalid** immediately upon:
-1. **URL Navigation**: Any change to `window.location.href` or pushState history.
-2. **Form Submission**: Submitting a form typically refreshes or substantially alters the page DOM.
-3. **Modal or Dialog Open/Close**: Mounts or unmounts a whole subtree, altering tab indices.
-4. **Accordion / Tab Switch**: Changes visibility of contained elements.
-5. **Timer-based DOM updates**: React Query / SWR background refetching that replaces list items.
-
----
-
-## 3. Safe Execution Protocol
-
-```mermaid
-flowchart TD
-    A["Take Snapshot & Generate Refs"] --> B["Dispatch Action using Ref"]
-    B --> C{"Did DOM mutate or page navigate?"}
-    C -- No --> D["Reuse remaining valid Refs"]
-    C -- Yes --> E["Invalidate Ref Table"]
-    E --> F["Request Fresh Snapshot before next action"]
-```
-
-**Rule**: Never attempt to interact with a ref after an action that modifies page state. Always acquire an updated snapshot first.
+- [CLI usage](../SKILL.md)
+- [Semantic locators](semantic-locators.md)

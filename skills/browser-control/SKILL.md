@@ -1,145 +1,46 @@
 ---
 name: browser-control
-description: Elite browser automation and control skill for navigating websites, interacting with complex SPAs, form submission, and tab management with sub-second latency and visual cursor feedback. Use this skill whenever the user mentions browser use, web automation, opening web pages, inspecting tabs, testing websites, interacting with web apps, or whenever an agent needs to automate or test a browser.
+description: Use the Antigravity Browser Bridge for browser navigation, snapshots, clicks, typing, paste, and sequential batches with explicit profile/tab targeting and outcome verification.
 ---
 
-# Browser Control: Elite Automation & Orchestration
+# Browser control
 
-The `browser-control` skill provides deterministic, high-throughput browser interaction across complex modern web applications (SPAs, React, Angular, Vue, canvas-heavy apps, and enterprise intranets). It bridges Antigravity tools (`mcp_antigravity_browser_*`), Chrome DevTools Protocol, and the native messaging extension to interact with web pages exactly like a human engineer, with visual cursor guidance visible 24/7.
+## Preflight and routing
 
----
+Read the workspace's operating rules first, then the bridge [current status](../../agent-docs/status/global.md). Inspect available MCP schemas or `agy-browser --help`; bridge tool names may have a client prefix. For CLI read [agent-browser](../agent-browser/SKILL.md); for Sheets read [browser-google-sheets](../browser-google-sheets/SKILL.md) plus [spreadsheets-mastery](../spreadsheets-mastery/SKILL.md) for modeling/design. [Playwright guidance](../playwright-interactive/SKILL.md) requires a separate configured environment; it is not a bridge capability.
 
-## 0. Skill Router: Choosing the Right Browser Tooling
+1. Inspect connected profiles (`agy-browser status`) and current tabs (`agy-browser tabs`). A website account and browser profile identity are different; verify both when relevant.
+2. Create a background tab with an exact connected profile, or claim an existing tab only when the user authorized that page/task. Never borrow idle user tabs or infer authorization from agentOwned=true.
+3. Record IDs created for this task. Ownership is profile-wide across agents; close only those IDs afterward. Avoid `cleanup`/close_agent_tabs during shared-agent work.
+4. Read snapshot/screenshot and choose the current UID or precise CSS selector. UID generations change across snapshots and worker lifecycles.
+5. Run deterministic single-tab steps, then read back application state. Inspect before retrying an uncertain mutation or taking an irreversible dependent step.
 
-Before executing any browser task, consult this routing matrix:
+## Locators and actions
 
-| Task Domain | Primary Skill | Supporting Reference |
-|---|---|---|
-| **Google Sheets & Financial Modeling** | `browser-google-sheets` | `spreadsheets-mastery` |
-| **Local Dev-Server & Fast Script Testing** | `agent-browser` | `references/dev-server-verification.md` |
-| **End-to-End QA, Viewports & Playwright** | `playwright-interactive` | `references/qa-checklists.md` |
-| **General Web Automation & SPA Navigation** | `browser-control` (This Skill) | `references/accessibility.md` |
-
----
-
-## 1. Non-Disruptive Background Execution & Safe Tab Ownership
-
-1. **Background by Default (`active: false`)**:
-   - When creating tabs via `browser_new_tab` or `agy-browser new`, tabs are opened silently in the background.
-   - The user can see the tab appear in their browser tab bar, but their active window and focused tab are **never stolen**.
-2. **Hardware Focus Emulation (Zero Throttling)**:
-   - Chrome normally throttles background timers and animations to save battery. The Antigravity bridge automatically enables `Emulation.setFocusEmulationEnabled` via CDP.
-   - Background web apps and single-page apps run at **100% full foreground speed** without screen disruption.
-3. **Safe Tab Ownership (`agentOwnedTabs`)**:
-   - Agents track tabs created in the current session.
-   - Agents must **never hijack an existing unknown tab** where the user is working (e.g. WhatsApp, personal email, active documents).
-   - If a task explicitly directs the agent to inspect or use an existing tab, pass `{ "allowExistingTab": true }`.
-4. **Clean Session Teardown (`browser_close_agent_tabs`)**:
-   - At the conclusion of a task, call `browser_close_agent_tabs` or `agy-browser cleanup` to close scratch tabs without touching the user's personal tabs.
-
----
-
-## 2. Core Operating Philosophy: Compound Batching (Sub-Second TPS)
-
-Traditional agent browser interaction suffers from crippling round-trip latency:
-- Turn 1: Click search box -> Wait for LLM
-- Turn 2: Type search term -> Wait for LLM
-- Turn 3: Press Enter -> Wait for LLM
-- Turn 4: Wait for results -> Wait for LLM
-
-**The Compound Batching Rule**:
-Whenever a sequence of actions is deterministic, never execute them across separate tool turns. Group them into a single `browser_run_actions` tool call or an equivalent evaluated script:
+`selector` accepts standard CSS through document.querySelectorAll, such as `[data-testid="save"]` or `button[aria-label="Save"]`. Playwright's `:has-text` and invented `[name="Save"]` accessibility predicates are not bridge CSS. For accessible text/role use:
 
 ```json
-{
-  "actions": [
-    { "type": "click", "selector": "input[type='search']" },
-    { "type": "type", "text": "production incident logs" },
-    { "type": "press_key", "key": "Enter" },
-    { "type": "wait", "ms": 500 }
-  ]
-}
+{"tabId":123,"text":"Save","role":"button"}
 ```
 
-This reduces execution time from 15–30 seconds down to <400 milliseconds.
+Use current snapshot UIDs for click/hover/drag/type. Semantic locators are top-document oriented; shadow roots, iframes, duplicate/occluded controls and canvas grids may need separate verified targeting.
 
----
-
-## 3. The 5-Step Interaction Lifecycle
-
-```mermaid
-flowchart TD
-    A["1. Profile Selection & Tab Claiming"] --> B["2. Visual & Accessibility Snapshot"]
-    B --> C["3. Target Locator Resolution"]
-    C --> D["4. Compound Action Batching"]
-    D --> E["5. Deterministic State Verification"]
+```json
+{"tabId":123,"actions":[{"type":"click","selector":"#search"},{"type":"type","text":"query","clear":true},{"type":"press_key","key":"Enter"}]}
 ```
 
-### Step 1: Profile Selection & Tab Claiming
-1. Run `browser_list_tabs` or `agy-browser tabs` to inspect open tabs and active Chrome profiles (`devops@qtloads.com`, default, etc.).
-2. If the target page was created by the agent in this session (`agentOwned: true`), reuse it.
-3. If creating a new page, call `browser_new_tab` (opens in background by default).
-4. Do not hijack user-owned tabs (`agentOwned: false`) without explicit instruction.
+Batches reduce client round trips but make no latency guarantee. They target one tab, execute sequentially, and are not transactional; errors identify completed action count. type uses Input.insertText, not human per-character keystrokes. Modified press_key handles shortcuts. Paste uses one event plus native text fallback for editable fields; rich editors must accept it. Verify actual values/save state/formatting after paste. No foreground-speed timer guarantee follows from focus emulation.
 
-### Step 2: Visual & Accessibility Snapshot
-1. Inspect the page structure using `browser_snapshot`.
-2. Extract the accessibility tree (roles, accessible names, states: `expanded`, `selected`, `checked`).
-3. Take a `browser_screenshot` when visual positioning, layout overlap, or canvas elements are involved.
-4. The 24/7 visual cursor will automatically render on the active tab and follow all click/hover coordinates.
+The tool surface is tab management, snapshot, click/hover/drag, type/key/paste/scroll, evaluate, screenshot, batch, and recording. The bridge does not expose arbitrary CDP, console/network-event streams, download interception, viewport control, or Playwright transport. Do not silently switch tools/session when something is missing. JavaScript dialogs are dismissed; do not rely on automatic acceptance.
 
-### Step 3: Target Locator Resolution
-Prioritize locators in this strict order:
-1. **Semantic Accessibility Selectors**: `button:has-text("Submit")`, `[role="button"][name="Save"]`, `[aria-label="Filter"]`.
-2. **Deterministic Data Attributes**: `[data-testid="search-input"]`, `[data-id="row-action"]`.
-3. **Fuzzy Text Match**: `browser_find_and_click` with text patterns and tags.
-4. **Calculated Coordinates**: Bounding box center coordinates `(x, y)` for canvas surfaces or unexposed custom components.
+Timeout or disconnect can leave work executing; inspect state before retrying. Existing user authorization applies to external actions; browser/tool access alone is not authorization to send messages or publish changes. Do not export cookies/tokens or dump session storage.
 
-### Step 4: Compound Action Execution
-Dispatch actions via `browser_run_actions`:
-- `click`: Triggers visual cursor move + mousedown + mouseup + click.
-- `hover`: Moves cursor to target and emits mouseenter/mouseover.
-- `type`: Types text with realistic keystroke dispatch.
-- `paste`: Atomic text injection into active element without keyboard lag.
-- `press_key`: Dispatches key events (`Enter`, `Tab`, `Escape`, `Backspace`, `ArrowDown`, etc.).
-- `scroll`: Scrolls target element or window viewport by `(x, y)` delta.
-- `wait`: Millisecond sleep between sequential events.
+## See also
 
-### Step 5: Deterministic State Verification
-Always verify completion:
-- Check for URL change, new tab creation, or navigation state.
-- Check for expected DOM changes: toast notifications, modal appearance, updated table rows.
-- If an action failed, immediately consult [Troubleshooting Reference](references/troubleshooting.md).
-
----
-
-## 4. Tool Reference & CLI Cheatsheet
-
-| MCP Tool | CLI Equivalent | Primary Use Case |
-|---|---|---|
-| `browser_list_tabs` | `agy-browser tabs [--profile <email>]` | Discover open tabs & profiles |
-| `browser_claim_tab` | `agy-browser claim <tabId>` | Explicitly claim existing tab as agent-owned |
-| `browser_new_tab` | `agy-browser new [--profile <hint>] <url>` | Create background tab |
-| `browser_activate_tab`| `agy-browser activate <tabId> [--bring-to-front]` | Focus or claim tab |
-| `browser_navigate` | `agy-browser nav <tabId> <url>` | Go to URL in tab |
-| `browser_snapshot` | `agy-browser snap <tabId>` | Fetch accessibility DOM tree |
-| `browser_click` | `agy-browser click <tabId> <uid>` | Single click with glowing cursor |
-| `browser_find_and_click`| `agy-browser fc <tabId> <selector>` | One-shot selector clicker |
-| `browser_type` | `agy-browser type <tabId> <text>` | Emulate human typing |
-| `browser_paste` | `agy-browser paste <tabId> <text> [--html <html>]` | Bulk TSV / HTML injection |
-| `browser_scroll` | `agy-browser scroll <tabId> [--distance <px>]` | Scroll window / viewport |
-| `browser_screenshot` | `agy-browser screenshot <tabId> [-o <path>]` | Capture and save image to disk |
-| `browser_evaluate` | `agy-browser eval <tabId> "<jsCode>"` | Evaluate JavaScript in page |
-| `browser_run_actions` | `agy-browser batch <tabId> '<actions>'` | **Compound action batch runner** |
-| `browser_close_tab` | `agy-browser close <tabId>` | Close single tab |
-| `browser_close_agent_tabs`| `agy-browser cleanup` | Cleanly close all agent scratch tabs |
-| `browser_reload_extension`| `agy-browser reload` | Hot-reload extension v1.5.0 |
-
----
-
-## 5. Detailed Deep-Dive References
-
-- **[Accessibility & ARIA Guide](references/accessibility.md)**: Semantic locators, aria attributes, focus traps, screen reader patterns.
-- **[Tab Claiming & Isolation](references/tab-claiming.md)**: Multi-window coordination, preventing tab collisions, clean tear-down.
-- **[CDP Capabilities & Fallbacks](references/cdp-capabilities.md)**: Emulation, network request inspection, dialog handlers.
-- **[File Uploads & Choosers](references/file-uploads.md)**: Handling hidden `<input type="file">`, synthetic drag-and-drop file transfers.
-- **[Troubleshooting & Recovery](references/troubleshooting.md)**: Diagnosing disconnected daemons, stale element references, canvas traps.
+- [CLI commands](../agent-browser/SKILL.md)
+- [Tab safety](references/tab-claiming.md)
+- [CDP/evaluation limits](references/cdp-capabilities.md)
+- [Accessibility](references/accessibility.md)
+- [File uploads](references/file-uploads.md)
+- [Troubleshooting](references/troubleshooting.md)
+- [Global Antigravity route](../../integration/antigravity-global.md)

@@ -1,60 +1,14 @@
-# Multi-Profile Tab Claiming & Isolation Reference
+# Tab claiming and isolation
 
-When automating browsers in a production or multi-user environment, users frequently have multiple Chrome profiles (e.g. `devops@qtloads.com`, personal, testing) and dozens of open tabs. Careless automation risks closing the user's active session, typing credentials into public chats, or creating duplicate windows.
+List tabs and profiles first. agentOwned means created OR claimed by any bridge client; it does not mean this agent created the tab. agentCreated is cleanup provenance, also shared across agents. Neither flag grants task authorization.
 
----
+Create a dedicated background tab with an exact connected profile unless the user authorized using an existing page. In that case use browser_claim_tab or `agy-browser claim <tabId>`. Do not claim unrelated pages or idle user tabs. Activate/focus only if requested; activation is not claiming.
 
-## 1. Tab Discovery Protocol
+Keep a task-local list of new IDs. Close each recorded scratch ID using browser_close_tab or `agy-browser close <tabId>`. Claimed user tabs should remain open. Bulk cleanup retains claimed tabs but can close other agents' created tabs, so avoid it during shared work. Reloads can reset ownership/provenance; inspect again rather than assuming persistence.
 
-Before launching any navigation or interaction:
-1. Call `browser_list_tabs`.
-2. Inspect the output array:
-```json
-[
-  {
-    "id": 459840364,
-    "windowId": 459840149,
-    "title": "Inbox (2,435) - devops@qtloads.com - QTLOADS Mail",
-    "url": "https://mail.google.com/mail/u/0/#inbox",
-    "active": true,
-    "profileEmail": "devops@qtloads.com"
-  },
-  {
-    "id": 459840387,
-    "windowId": 459840083,
-    "title": "New Tab",
-    "url": "chrome://newtab/",
-    "active": true,
-    "profileEmail": "unknown"
-  }
-]
-```
+Browser profile identity is distinct from the website login/account. Reject mismatches or ambiguity instead of guessing. Multiple profiles require selection for new tabs; missing/colliding tab IDs fail explicitly.
 
----
+## See also
 
-## 2. Decision Matrix: Claim vs. New Tab
-
-```mermaid
-flowchart TD
-    A["Check open tabs via browser_list_tabs"] --> B{"Is target URL or domain already open?"}
-    B -- Yes --> C{"Is the open tab in the required profile?"}
-    C -- Yes --> D["Claim existing tab (browser_activate_tab)"]
-    C -- No --> E["Check if profile has a blank / new tab"]
-    B -- No --> E
-    E -- Yes --> F["Navigate existing blank tab"]
-    E -- No --> G["Create new tab in target window (browser_new_tab)"]
-```
-
-### Golden Rules:
-1. **Never duplicate an existing open document**: If a Google Sheet, Grafana Dashboard, or Jira ticket is already open, claim it. Opening a second instance causes edit desynchronization and WebSocket contention.
-2. **Reuse idle tabs**: If a window has an empty `chrome://newtab/`, navigate that tab instead of opening an extra one.
-3. **Verify Profile Context**: If interacting with AWS, Jenkins, Grafana, or corporate Google Docs, ensure `profileEmail` matches the authenticated work account (`devops@qtloads.com`).
-
----
-
-## 3. Tab State & Cursor Synchronization
-
-When `browser_activate_tab` is called:
-1. The extension brings that tab to the foreground.
-2. The 24/7 cursor engine immediately queries the active tab's layout and renders the pointer at the last known coordinates with a glowing aura.
-3. If the page is still loading (`status: "loading"`), wait until `status: "complete"` before sending compound keystrokes or clicks.
+- [Browser skill](../SKILL.md)
+- [Project routing gotchas](../../../agent-docs/gotchas/ownership-and-routing.md)

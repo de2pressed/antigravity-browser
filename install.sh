@@ -43,4 +43,25 @@ for skill in browser-control browser-google-sheets spreadsheets-mastery agent-br
   fi
   cp -a -- "$REPO_DIR/skills/$skill" "$SKILLS_DIR/$skill"
 done
+# Copies live outside the checkout: localize links into project docs/integration.
+"$NODE_BIN" <<'JS'
+const fs = require('fs'), path = require('path');
+const root = process.env.ANTIGRAVITY_INSTALL_ROOT, skills = path.join(root, 'skills');
+for (const name of ['browser-control','browser-google-sheets','spreadsheets-mastery','agent-browser','playwright-interactive']) {
+  function walk(dir) {
+    for (const entry of fs.readdirSync(dir, {withFileTypes:true})) {
+      const source = path.join(dir, entry.name);
+      if (entry.isDirectory()) { walk(source); continue; }
+      if (!entry.name.endsWith('.md')) continue;
+      const content = fs.readFileSync(source,'utf8').replace(/\[([^\]]*)\]\(([^)]+)\)/g, (original,label,link) => {
+        if (/^(https?:|#|\/|~)/.test(link)) return original;
+        const [relative,fragment] = link.split('#'), resolved = path.resolve(path.dirname(source), relative);
+        return resolved.startsWith(skills + path.sep) ? original : `[${label}](${resolved}${fragment ? '#' + fragment : ''})`;
+      });
+      fs.writeFileSync(path.join(process.env.HOME,'.gemini/config/skills',name,path.relative(path.join(skills,name),source)),content);
+    }
+  }
+  walk(path.join(skills,name));
+}
+JS
 printf 'Installed from %s\nLoad browser-extension in Chrome; check with agy-browser status\n' "$REPO_DIR"

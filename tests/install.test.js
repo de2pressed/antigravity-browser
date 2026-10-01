@@ -6,5 +6,6 @@ test('installer supports a custom clone location with spaces and backs up existi
  const manifest=JSON.parse(fs.readFileSync(path.join(home,'.config/google-chrome/NativeMessagingHosts/com.google.antigravity.browser.json')));assert.equal(manifest.path,path.join(repo,'browser-bridge/host-launcher.sh'));
  const service=fs.readFileSync(path.join(home,'.config/systemd/user/antigravity-browser-bridge.service'),'utf8');assert.equal(service.includes(repo),true);assert.equal(service.includes('/home/jayant/.gemini'),false);
  const skills=path.join(home,'.gemini/config/skills');const backup=fs.readdirSync(skills).find(f=>f.startsWith('agent-browser.backup.'));assert.equal(fs.readFileSync(path.join(skills,backup,'custom.txt'),'utf8'),'preserve me');
+ const installedBrowser=fs.readFileSync(path.join(skills,'browser-control','SKILL.md'),'utf8');assert.equal(installedBrowser.includes(path.join(repo,'agent-docs/status/global.md')),true);
  const cli=spawn(path.join(home,'.local/bin/agy-browser'),['--help'],{env:{...process.env,HOME:home},stdio:'pipe'});let output='';cli.stdout.on('data',b=>output+=b);assert.equal((await once(cli,'exit'))[0],0);assert.match(output,/Antigravity Browser Bridge CLI/);
 });

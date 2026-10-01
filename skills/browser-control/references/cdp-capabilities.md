@@ -1,75 +1,21 @@
-# Chrome DevTools Protocol (CDP) & Low-Level Capabilities
+# CDP and page evaluation boundaries
 
-While high-level extension actions (`browser_click`, `browser_type`, `browser_run_actions`) cover 90% of user journeys, certain browser workflows require low-level Chrome DevTools Protocol (CDP) capabilities.
+The extension internally uses CDP; browser_evaluate runs a JavaScript expression in the page. It does not forward arbitrary CDP commands and cannot replace download/network/device emulation tools. Raw CDP, console/network streams, viewport control and Playwright need separately configured, user-authorized tools. Report capability gaps instead of inventing bridge APIs.
 
----
+Expressions must execute, not merely declare an arrow function:
 
-## 1. When to Use Low-Level CDP
-
-Use low-level CDP via `browser_evaluate` or Chrome DevTools MCP tools when:
-1. **Dialog Handling**: Intercepting `window.alert`, `window.confirm`, or `window.prompt` before they block the browser execution thread.
-2. **Download Interception**: Setting download behavior to redirect files into a headless working folder.
-3. **Network Emulation**: Throttling network latency, mocking offline state, or overriding headers (e.g. `Authorization` or custom cookies).
-4. **Device & Viewport Emulation**: Simulating mobile screen dimensions, pixel ratios, and touch events.
-
----
-
-## 2. JavaScript Evaluation Patterns (`browser_evaluate`)
-
-The `browser_evaluate` tool executes arbitrary JavaScript inside the page execution context with direct access to `window`, `document`, and web APIs.
-
-### A. Extracting Clean Structured Data
 ```javascript
-() => {
-  const rows = Array.from(document.querySelectorAll('table.data-table tbody tr'));
-  return rows.map(r => ({
-    name: r.querySelector('.col-name')?.innerText.trim(),
-    status: r.querySelector('.col-status')?.innerText.trim(),
-    value: parseFloat(r.querySelector('.col-val')?.innerText.replace(/[^0-9.]/g, '') || '0')
-  }));
-}
+(() => Array.from(document.querySelectorAll('table tbody tr'), row => ({
+  name: row.querySelector('.name')?.textContent?.trim() || '',
+  status: row.querySelector('.status')?.textContent?.trim() || ''
+})))()
 ```
 
-### B. Waiting for Dynamic DOM Predicates
-```javascript
-(timeoutMs = 5000) => {
-  return new Promise((resolve, reject) => {
-    const start = Date.now();
-    const interval = setInterval(() => {
-      const el = document.querySelector('.async-content-loaded');
-      if (el) {
-        clearInterval(interval);
-        resolve(true);
-      } else if (Date.now() - start > timeoutMs) {
-        clearInterval(interval);
-        reject(new Error('Timeout waiting for .async-content-loaded'));
-      }
-    }, 100);
-  });
-}
-```
+Wait for a bounded page predicate with an invoked promise expression; include timeout and interval cleanup. Page evaluation can mutate the application, so its tab authorization checks apply. Read only the scoped data needed; do not dump cookies, localStorage, sessionStorage, credentials or authentication tokens.
 
-### C. Triggering Custom Synthetic Events
-```javascript
-(selector) => {
-  const el = document.querySelector(selector);
-  if (!el) return false;
-  el.dispatchEvent(new Event('input', { bubbles: true }));
-  el.dispatchEvent(new Event('change', { bubbles: true }));
-  return true;
-}
-```
+The extension dismisses JavaScript dialogs by default. Do not assume it accepts confirmations or provides a dialog-accept command.
 
----
+## See also
 
-## 3. Cookie & Local Storage Auditing
-
-Read or modify browser session state in the active origin:
-```javascript
-// Inspect session storage keys
-() => ({
-  cookies: document.cookie,
-  localStorage: { ...localStorage },
-  sessionStorage: { ...sessionStorage }
-})
-```
+- [Browser skill](../SKILL.md)
+- [Client capability limits](../../../agent-docs/servers/clients.md)

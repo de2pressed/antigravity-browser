@@ -25,7 +25,7 @@ ss -tulpn | grep -E ':(3000|5173|8080)'
 
 ### Step 2: Navigate to Development URL
 ```bash
-node /home/jayant/.gemini/antigravity/browser-bridge/cli.js navigate "http://localhost:5173"
+agy-browser navigate <tabId> "http://localhost:5173"
 ```
 
 ### Step 3: Audit Console Logs for Errors
@@ -51,3 +51,5 @@ Or check Chrome DevTools console messages for:
 
 ### Step 5: Visual Screenshot Audit
 Take a screenshot via `browser_screenshot` to confirm visual layout, alignment, typography, and responsive margins.
+
+The bridge has no dedicated console/network-event or viewport-control command. Use Chrome DevTools or separately configured Playwright for those checks.

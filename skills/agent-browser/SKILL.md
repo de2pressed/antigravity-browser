@@ -1,87 +1,48 @@
 ---
 name: agent-browser
-description: High-velocity CLI and script-driven browser operations skill for fast ref indexing, multi-action piping, and local dev server verification.
+description: CLI browser automation using the Antigravity Browser Bridge, exact tab IDs, accessibility UIDs, and sequential action batches.
 ---
 
-# Agent Browser: High-Velocity Script & CLI Orchestration
+# Agent Browser
 
-The `agent-browser` skill focuses on programmatic, shell-driven, and REPL-driven browser automation. Where manual interactive browsing is deliberate, `agent-browser` executes rapid verification loops, inspects local development servers (Vite, Next.js, React, Node), parses console errors, and drives CLI commands with sub-second execution speeds.
+Use `agy-browser --help` as the implemented CLI contract. The bridge uses an existing Chrome extension/native host connection. Playwright, console-event capture, network interception, and viewport emulation are separate tools, not CLI features.
 
----
+## Commands
 
-## 1. Fast CLI Pipeline Interface
+| Task | Command |
+|---|---|
+| Connected profiles | `agy-browser status` |
+| Find tabs | `agy-browser tabs [--profile <substring>] [--search <query>]` |
+| Create background tab | `agy-browser new --profile <email> <url>` |
+| Claim a user-authorized tab | `agy-browser claim <tabId>` |
+| Activate a tab | `agy-browser activate <tabId> [--bring-to-front]` |
+| Navigate | `agy-browser navigate <tabId> <url>` |
+| Snapshot | `agy-browser snap <tabId>` |
+| Click a snapshot UID | `agy-browser click <tabId> <uid>` |
+| Click a CSS selector | `agy-browser fc <tabId> <selector>` |
+| Type | `agy-browser type <tabId> <text> [--uid <uid>] [--clear] [--enter]` |
+| Paste | `agy-browser paste <tabId> <text> [--html <markup>]` |
+| Key | `agy-browser press-key <tabId> Enter [--ctrl] [--alt] [--shift] [--meta]` |
+| Scroll | `agy-browser scroll <tabId> --distance 500 [--up]` |
+| Screenshot | `agy-browser screenshot <tabId> -o /tmp/page.jpg` |
+| Batch | `agy-browser batch <tabId> '[{"type":"click","selector":"#submit"}]'` |
+| Recording | `agy-browser record <tabId> '<actionsJson>' -o /tmp/workflow.mp4` |
+| Close one tab | `agy-browser close <tabId>` |
+| Close created scratch tabs | `agy-browser cleanup` |
+| Reload extension | `agy-browser reload-extension` |
 
-The Antigravity Browser Bridge provides a zero-overhead Node.js CLI:
-```bash
-node /home/jayant/.gemini/antigravity/browser-bridge/cli.js <command> [args]
-```
+## Safety and accuracy
 
-### Core CLI Commands Matrix
+Specify a connected profile when more than one is available. A browser profile email is distinct from the account currently authenticated on a website. Verify both when account identity matters.
 
-| Command | Shorthand | Description | Example |
-|---|---|---|---|
-| `status` | `st` | Check daemon status & connected profiles | `node cli.js status` |
-| `list-tabs` | `tabs` | List all open tabs across all Chrome windows | `node cli.js list-tabs` |
-| `activate-tab` | `act` | Focus specific tab by ID | `node cli.js activate-tab 459840364` |
-| `navigate` | `nav` | Navigate active tab to URL | `node cli.js navigate "http://localhost:3000"` |
-| `snapshot` | `snap` | Print concise accessibility snapshot | `node cli.js snapshot` |
-| `click` | `c` | Click selector or (x, y) coordinates | `node cli.js click "button.submit"` |
-| `find-and-click`| `fc` | Locate text and click matching element | `node cli.js find-and-click "Log In"` |
-| `type` | `t` | Type text into active or selected element | `node cli.js type "admin@test.com"` |
-| `paste` | `p` | Atomic clipboard paste | `node cli.js paste "bulk payload"` |
-| `press` | `k` | Dispatch keyboard key | `node cli.js press Enter` |
-| `scroll` | `sc` | Scroll active viewport | `node cli.js scroll 0 500` |
-| `batch` | `run` | Execute JSON batch of actions | `node cli.js batch '[{"type":"click","selector":"#btn"}]'` |
-| `reload-extension`| `re` | Hot-reload extension v1.4.0 | `node cli.js reload-extension` |
+Only claim an existing tab when the user authorized interacting with that tab. Bulk cleanup retains claimed user tabs and closes created tabs. Ownership is shared by extension clients within a profile, rather than isolated per agent session; avoid bulk cleanup when another client may be using scratch tabs.
 
----
+Snapshots use `uid=<tabId>_<generation>_<index>`, not `e1` aliases. A new snapshot replaces the previous mapping; navigation clears it. After a significant page change, take another snapshot before using UIDs.
 
-## 2. Ref Lifecycle & Numerical Handle Indexing
+A batch targets one tab. Failures are partial and identify the completed count. A timeout does not cancel browser work: inspect the outcome before retrying. Paste success requires read-back in the application, especially for Sheets or rich HTML.
 
-In high-speed test automation, snapshotting full DOM trees produces too many tokens. The Ref Indexing pattern compresses the accessibility tree into numbered tags:
+## See also
 
-```
-[e1] button "Sign in"
-[e2] input[text] "Username"
-[e3] input[password] "Password"
-[e4] link "Forgot password?"
-```
-
-To interact with reference `e2`:
-- The CLI translates `e2` into the cached CSS selector or coordinate center `(x, y)`.
-- Action is dispatched instantly: `click e2`, `type e2 "admin"`.
-- *Rule*: Whenever the page navigates, submits a form, or opens a modal, the ref index is invalidated and a fresh snapshot must be taken.
-
----
-
-## 3. Local Dev-Server Verification Workflow
-
-When developing or debugging web applications locally:
-
-```mermaid
-sequenceDiagram
-    participant Dev as Agent / Engineer
-    participant Server as Vite / Next.js Server
-    participant Browser as Chrome Browser Bridge
-    
-    Dev->>Server: Start local server (npm run dev)
-    Dev->>Browser: node cli.js navigate "http://localhost:5173"
-    Browser->>Browser: Load DOM & assets
-    Dev->>Browser: Check console messages & network errors
-    Dev->>Browser: Take screenshot / snapshot
-    Dev->>Browser: Interact with forms & buttons
-    Browser-->>Dev: Verify state change & render
-```
-
-### Key Verification Checks:
-1. **Console Error Interception**: Ensure zero uncaught JavaScript exceptions, React hydration errors, or unhandled promise rejections.
-2. **Network 4xx/5xx Audit**: Verify all bundled chunks, API routes, and assets load with HTTP 200/304.
-3. **Viewport Responsiveness**: Test at 1440px desktop, 768px tablet, and 375px mobile dimensions.
-
----
-
-## 4. Deep-Dive References
-
-- **[Ref Lifecycle & Dynamic Invalidation](references/ref-lifecycle.md)**: Handling ref assignment, DOM mutations, and snapshot caching.
-- **[Semantic Locators in Single-Page Apps](references/semantic-locators.md)**: Finding elements in React/Next.js/Tailwind apps without fragile CSS classes.
-- **[Dev Server Verification Playbook](references/dev-server-verification.md)**: Automated end-to-end verification checklist for Vite, Next.js, and Express apps.
+- [UID lifecycle](references/ref-lifecycle.md)
+- [Semantic locators](references/semantic-locators.md)
+- [Dev server verification](references/dev-server-verification.md)
